@@ -64,9 +64,41 @@ If a token was ever pasted into a ticket, chat, or a tracked file, **rotate** it
 
 Optional: **`BUNDLE_ZIP`**, **`FS_UPLOAD_PATH`**, **`CAM_BASE_PATH`**, **`BUNDLE_FILE_NAME`**, **`CURL_*`** (see script header).
 
-**Windows / lab TLS:** Git **`mingw64/bin/curl.exe`** (common when **`usr/bin/curl.exe`** is absent) still uses **Schannel**; use a trusted lab CA, **`CURL_CA_BUNDLE`**, or **`NSP_TLS_INSECURE=1`** (non-production). For **`curl: (26) Failed to open/read local data`** on multipart upload, the script uses **`cygpath -w`** for the **`file=@...`** path when **`cygpath`** is available so MinGW/Schannel curl can open the ZIP.
+**Windows / lab TLS:** Git **`mingw64/bin/curl.exe`** (common when **`usr/bin/curl.exe`** is absent) still uses **Schannel**; use a trusted lab CA, **`CURL_CA_BUNDLE`**, or **`NSP_TLS_INSECURE=1`** (non-production). In **GitHub Actions**, **`upload-and-install.sh`** defaults **`NSP_TLS_INSECURE=1`** when unset (see CI section). For **`curl: (26) Failed to open/read local data`** on multipart upload, the script uses **`cygpath -w`** for the **`file=@...`** path when **`cygpath`** is available so MinGW/Schannel curl can open the ZIP.
 
 Upload uses the same pattern as the CAM UI: **`POST .../nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true`** with multipart **`file`**.
+
+### Windows: manual curl when you see `curl: (60)` (Schannel)
+
+This environment cannot run your Windows runner or reach your lab (no Windows curl test from here). If **`NSP_TLS_INSECURE`** is unset locally, curl correctly refuses an untrusted lab chain (**`(60)`**). **Postman** often still works because **Settings → General → SSL certificate verification** is off, or trust differs from **Git MinGW curl + Schannel**.
+
+**GitHub Actions:** **`upload-and-install.sh`** sets **`NSP_TLS_INSECURE=1`** by default when **`GITHUB_ACTIONS`** is true and the variable is unset or empty (no extra repo secret). To verify TLS in CI, set job env **`NSP_TLS_INSECURE: "0"`** in **`deploy-nsp-lab.yml`** and use a trusted CA or **`CURL_CA_BUNDLE`**.
+
+**Local `.env`:** set **`NSP_TLS_INSECURE=1`** for non-production labs, or import the lab issuing CA into Windows and/or set **`CURL_CA_BUNDLE`** to a PEM bundle curl accepts.
+
+**Manual test (Git Bash)** -- use a **Windows** path for **`file=@`** with MinGW curl; **`-k`** is the same knob as **`NSP_TLS_INSECURE=1`**:
+
+```bash
+TOKEN="paste-jwt-here-no-Bearer-prefix"
+ZIP_WIN="C:/Users/you/Downloads/nsp-ne-backup-1.41.0.zip"
+"/c/Program Files/Git/mingw64/bin/curl.exe" -k -sS -w "\nHTTP %{http_code}\n" \
+  -X POST "https://100.120.90.89/nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -F "file=@${ZIP_WIN};filename=$(basename "$ZIP_WIN")"
+```
+
+**Manual test (PowerShell)** -- call **`curl.exe`**, not the **`curl`** alias:
+
+```powershell
+$token = "paste-jwt-here-no-Bearer-prefix"
+$zip = "C:\Users\you\Downloads\nsp-ne-backup-1.41.0.zip"
+& curl.exe -k -sS -w "`nHTTP %{http_code}`n" `
+  -X POST "https://100.120.90.89/nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true" `
+  -H "Authorization: Bearer $token" `
+  -F "file=@${zip};filename=$(Split-Path $zip -Leaf)"
+```
+
+Postman **Code** exports sometimes emit **`--form '=@C:/...'`** (missing the field name). For this API the part name must be **`file`**, as in **`-F "file=@C:/path/to.zip"`**.
 
 ## Documentation
 
@@ -76,7 +108,7 @@ Implementation plan and northbound context: [`rags-nsp-docs/inno-ideas/cam-north
 
 Workflow **[`.github/workflows/build-repack-nsp-ne-backup.yml`](./.github/workflows/build-repack-nsp-ne-backup.yml)** builds on push to **`main`** or **`master`** when files change under **`source-bundle/`**, **`builder/`**, **`scripts/`**, or that workflow file; it also runs on **`pull_request`** with the same path filters and on **`workflow_dispatch`** (manual, no path filter). It uploads **`dist/*.zip`** as a workflow artifact.
 
-**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. Optional: **`NSP_TLS_INSECURE`** = **`1`** so curl skips TLS verification for private lab CAs (non-production only).
+**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification.
 
 ### Build locally (same as CI)
 

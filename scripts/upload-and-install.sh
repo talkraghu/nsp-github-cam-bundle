@@ -25,6 +25,17 @@ if [[ -f "${ROOT}/.env" ]]; then
   _dbg "sourced ${ROOT}/.env"
 fi
 
+# GitHub Actions (self-hosted lab): Schannel curl often hits (60) on private CAs.
+# Default NSP_TLS_INSECURE=1 when unset or empty so no extra repo secret is required.
+# Set NSP_TLS_INSECURE=0 in the job env to enforce TLS verification.
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  if [[ -z "${NSP_TLS_INSECURE:-}" ]]; then
+    NSP_TLS_INSECURE=1
+    export NSP_TLS_INSECURE
+    _log "GITHUB_ACTIONS: NSP_TLS_INSECURE unset; defaulting to 1 (curl --insecure, lab only). Set NSP_TLS_INSECURE=0 to verify."
+  fi
+fi
+
 # Git Bash on Windows: prefer Git-bundled curl (usr/bin or mingw64/bin). Plain
 # Windows System32 curl.exe uses Schannel and often fails (26) on MSYS paths for
 # multipart file= and (60) on private lab CAs unless trusted.
@@ -73,7 +84,7 @@ _dbg "PATH(first entries)=$(echo "${PATH}" | tr ':' '\n' | head -10)"
 #   BUNDLE_FILE_NAME        override zip basename on server (default: basename of BUNDLE_ZIP)
 #   CURL_CONNECT_TIMEOUT    seconds (default 30)
 #   CURL_MAX_TIME           seconds for whole transfer (default 600)
-#   NSP_TLS_INSECURE        set to 1 for curl --insecure (lab only; private CA)
+#   NSP_TLS_INSECURE        1 = curl --insecure (lab). On GitHub Actions, defaults to 1 if unset/empty. Use 0 to verify TLS.
 #   CURL_CA_BUNDLE          PEM path for curl --cacert (corporate CA)
 #   UPLOAD_INSTALL_DEBUG    set to 1 (or DEBUG=1) for extra stderr logs (never logs CAM_TOKEN)
 #   Windows: multipart file=@ uses cygpath -w when cygpath exists (MinGW curl + /c/...)
