@@ -1,0 +1,43 @@
+{
+	"meta-data-header": {
+		"name": "nsp-ne-backup",
+		"version": "1.41.0",
+		"buildNumber": "1",
+		"formatVersion": "1.0",
+		"createdBy": "",
+		"creationDate": "",
+		"title": "NE Backup Artifact Bundle",
+		"description": "contains artifacts needed to support NE backup operation in NSP"
+	},
+	"artifact-meta-data": [{
+			"targetApplication": "lsom-server-app",
+			"applicationCompatibility": "21.11+",
+			"version": "1.14.0",
+			"name": "ne_backuP"
+		},
+		{
+			"targetApplication": "nsp-mistral-api",
+			"applicationCompatibility": "21.11+",
+			"version": "1.0.0",
+			"name": "lso-7x50-backup"
+		},
+		{
+			"targetApplication": "nsp-mistral-api",
+			"applicationCompatibility": "21.11+",
+			"version": "1.0.0",
+			"name": "lso-7x50-backup-classic"
+		},
+		{
+			"targetApplication": "nsp-mistral-api",
+			"applicationCompatibility": "21.11+",
+			"version": "1.0.0",
+			"name": "lso-7x50-backup-md-mixed"
+		},
+		{
+			"targetApplication": "nsp-mistral-api",
+			"applicationCompatibility": "21.11+",
+			"version": "1.0.0",
+			"name": "lso-7x50-backup-md-mixed-retention"
+		}
+	]
+}

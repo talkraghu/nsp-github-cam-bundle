@@ -1,0 +1,119 @@
+version: '2.0'
+
+LSO_7x50_Backup:
+  type: direct
+  tags:
+    - LSO
+    - 7x50 NE Backup
+
+  workflow_meta:
+    title: Performs NE Backup on the Classic, Model Driven and Mixed Mode devices
+    author: NOKIA R&D
+    version: '1.2.0'
+    license: 
+    package: LSOM 7x50 NE Backup
+    deprecated: false
+    dependencies:
+      platform:
+        nspOS: ['21.11']
+        nfmpOS: ['21.11']
+      nodal:
+        - type: 'Nokia 7x50'
+          releases: ['19.10','20.x','21.x']
+          mgmtmode: ['classic', 'model-driven', 'mixed']
+          
+  input:
+    - neId
+    - retentionValue:
+    - retentionPolicy:
+    - debugFilename: ''
+    - backupCertificates: 'no'
+    
+    
+  output:
+    lsoInfo: <% $.lsoInfo %>
+
+  output-on-error:
+    lsoInfo: "Error: <% $.lsoInfo %>"
+    
+  tasks:
+    lsoStageMapping:
+      action: std.noop
+      publish:
+        status: "Initiating Backup Process"
+        lsoWorkflowStageMapping:
+          LSO_7x50_Backup_Classic:
+            - triggeringBackup
+            - savingNodeConfig
+            - fetchBackupStatus
+            - backupFailed
+          LSO_7x50_Backup_MD_Mixed:
+            - PreChecks
+            - SavingConfig
+            - TransferringFiles
+            - PostProcessing
+            - BackupRetentionTriggerFailed
+            - BackupRetention
+      on-success:
+        - decideMode
+
+    decideMode:
+      action: nsp.https
+      input:
+        url: "https://network-supervision/NetworkSupervision/rest/api/v1/networkElements/?filter=neId='<% $.neId %>'"
+      publish:
+        lsoInfo: <% task().result %>
+        productType: <% task().result.content.response.data[0].product.split(" ").join("_") %>
+        neName: <% task().result.content.response.data[0].neName %>
+        nodeMode: <% task().result.content.response.data[0].sourceType %>
+        nodeIp: <% task().result.content.response.data[0].ipAddress %>
+        ne_fdn: <% task().result.content.response.data[0].fdn %>
+        neSoftwareVersion: <% concat("TiMOS-",task().result.content.response.data[0].version.split("-")[2]) %>
+      publish-on-error:
+        lsoStageError: <% task().result %>      
+        lsoInfo: "Failed: fetching of NE details from Network Supervision app has failed" 
+      on-success:
+        - runBackupOnClassicNode: <% $.nodeMode = "nfmp" %>
+        - runBackupOnMdNode: <% $.nodeMode = "mdm" %>
+      on-error:
+        - backupFailure
+        
+        
+    runBackupOnClassicNode:
+      workflow: LSO_7x50_Backup_Classic neId='<% $.neId %>'
+      publish:
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        backupResult: <% task().result %>
+      on-success:
+        - backupSuccessful
+      on-error:
+        - backupFailure
+
+
+    runBackupOnMdNode:
+      workflow: LSO_7x50_Backup_MD_Mixed neId='<% $.neId %>' nodeIp='<% $.nodeIp %>' nodeType='<% $.productType %>' neName='<% $.neName %>' debugFilename='<% $.debugFilename %>' backupCertificates='<% $.backupCertificates %>' ne_fdn='<% $.ne_fdn %>' retentionValue='<% $.retentionValue %>' retentionPolicy='<% $.retentionPolicy %>'
+      publish:
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %> 
+        backupResult: <% task().result %>         
+      on-success:
+        - backupSuccessful
+      on-error:
+        - backupFailure
+        
+
+    backupFailure:
+      join: 0
+      action: std.fail
+      input: 
+        error_data: <% $.backupResult.lsoInfo %> 
+      publish-on-error:
+        lsoInfo: <% task().result %>
+        
+    backupSuccessful:
+      join: 0 
+      publish:
+        lsoInfo: "Backup successful"

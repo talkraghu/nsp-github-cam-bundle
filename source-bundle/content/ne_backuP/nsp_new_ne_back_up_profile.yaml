@@ -1,0 +1,28 @@
+phases:
+  - phase: 'Backup'
+    description: 'Single phase backup'
+    concurrency_count: 20
+    ne_families: 
+        - family_type: 7750 SR, 7950 XRS, 7450 ESS, 7250 IXR
+          ne_versions: 
+            - version: all 
+              workflow_name: LSO_7x50_Backup 
+              workflow_inputs: 
+                debugFilename:
+                #debugFilename is the filename of the debug file on the node that needs backing up
+                backupCertificates: 'no' 
+                #backupCertificates flag specifies if node certificates needs to be backed up. Default: "no"
+        - family_type: 7210 SAS Mxp, 7210 SAS D, 7210 SAS Dxp, 7210 SAS K, 7210 SAS M, 7210 SAS X, 7210 SAS T, 7210 SAS R, 7210 SAS E, 7210 SAS S/Sx
+          ne_versions: 
+            - version: all 
+              workflow_name: LSO_7x50_Backup 
+              workflow_inputs: 
+                debugFilename:          
+                backupCertificates: 'no'        
+        - family_type: 7705 SAR H, 7705 SAR 
+          ne_versions: 
+            - version: all 
+              workflow_name: LSO_7x50_Backup 
+              workflow_inputs: 
+                debugFilename: 
+                backupCertificates: 'no'

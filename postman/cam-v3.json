@@ -1,0 +1,726 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+      "title": "CAM Server REST API",
+      "description": "Common Artifact Manager (CAM) Server REST APIs. Use the \"Select a definition\" dropdown above to switch between v1, v2 and v3 endpoints.",
+      "version": "v3"
+    },
+    "servers": [
+      {
+        "url": "https://100.120.90.89/cam",
+        "description": "Generated server url"
+      }
+    ],
+    "security": [
+      {
+        "bearer-jwt": []
+      }
+    ],
+    "paths": {
+      "/rest/api/v1/synchronize/start/artifactConfig": {
+        "post": {
+          "tags": [
+            "sync-rest-controller"
+          ],
+          "operationId": "startSyncBundles",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/synchronize/artifactConfig": {
+        "post": {
+          "tags": [
+            "sync-rest-controller"
+          ],
+          "operationId": "syncBundles",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactBundles"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactConfig/unInstall": {
+        "post": {
+          "tags": [
+            "artifact-config-rest-controller"
+          ],
+          "operationId": "unInstallBundles",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactBundles"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactConfig/install": {
+        "post": {
+          "tags": [
+            "artifact-config-rest-controller"
+          ],
+          "operationId": "installBundles",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactBundles"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactConfig/install/{artifactBundleName}": {
+        "post": {
+          "tags": [
+            "artifact-config-rest-controller"
+          ],
+          "operationId": "installBundle",
+          "parameters": [
+            {
+              "name": "artifactBundleName",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactBundle/validateName/{artifactBundleName}": {
+        "post": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "validateName",
+          "parameters": [
+            {
+              "name": "artifactBundleName",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactBundle/unInstall": {
+        "post": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "unInstallBundles_1",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactBundles"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactBundle/install": {
+        "post": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "installBundles_1",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactBundles"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactBundle/install/{artifactBundleName}": {
+        "post": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "installBundle_1",
+          "parameters": [
+            {
+              "name": "artifactBundleName",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/synchronize/syncStatus": {
+        "get": {
+          "tags": [
+            "sync-rest-controller"
+          ],
+          "operationId": "getSyncStatus",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/synchronize/isInSync": {
+        "get": {
+          "tags": [
+            "sync-rest-controller"
+          ],
+          "operationId": "isInSync",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/syncStatus/isInSync": {
+        "get": {
+          "tags": [
+            "sync-status-rest-controller"
+          ],
+          "operationId": "isInSync_1",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/syncStatus/": {
+        "get": {
+          "tags": [
+            "sync-status-rest-controller"
+          ],
+          "operationId": "getSyncStatus_1",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/signature/{isValid}": {
+        "get": {
+          "tags": [
+            "signature-rest-controller"
+          ],
+          "operationId": "verify",
+          "parameters": [],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactConfig/resourceVersion": {
+        "get": {
+          "tags": [
+            "artifact-config-rest-controller"
+          ],
+          "operationId": "getResourceVersion",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactConfig/": {
+        "get": {
+          "tags": [
+            "artifact-config-rest-controller"
+          ],
+          "operationId": "getBundles",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactBundle/{artifactBundleName}": {
+        "get": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "getBundle",
+          "parameters": [
+            {
+              "name": "artifactBundleName",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "delete": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "unInstallBundle",
+          "parameters": [
+            {
+              "name": "artifactBundleName",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactBundle/lastReConcileTime": {
+        "get": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "getLastreConcileTime",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactBundle/": {
+        "get": {
+          "tags": [
+            "artifact-bundle-rest-controller"
+          ],
+          "operationId": "getBundles_1",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifact/{artifact}": {
+        "get": {
+          "tags": [
+            "artifact-rest-controller"
+          ],
+          "operationId": "getArtifact",
+          "parameters": [
+            {
+              "name": "artifact",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifact/unInstall/{artifactName}": {
+        "get": {
+          "tags": [
+            "artifact-rest-controller"
+          ],
+          "operationId": "unInstallArtifact",
+          "parameters": [
+            {
+              "name": "artifactName",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifact/exists/{artifact}": {
+        "get": {
+          "tags": [
+            "artifact-rest-controller"
+          ],
+          "operationId": "isArtifactPresent",
+          "parameters": [
+            {
+              "name": "artifact",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifact/": {
+        "get": {
+          "tags": [
+            "artifact-rest-controller"
+          ],
+          "operationId": "getArtifacts",
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/rest/api/v1/artifactConfig/{artifactBundleName}": {
+        "delete": {
+          "tags": [
+            "artifact-config-rest-controller"
+          ],
+          "operationId": "unInstallBundle_1",
+          "parameters": [
+            {
+              "name": "artifactBundleName",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "schemas": {
+        "Artifact": {
+          "type": "object",
+          "properties": {
+            "artifact": {
+              "type": "string"
+            }
+          }
+        },
+        "ArtifactBundleSpec": {
+          "type": "object",
+          "properties": {
+            "bundleName": {
+              "type": "string"
+            },
+            "shouldImport": {
+              "type": "boolean"
+            },
+            "artifacts": {
+              "uniqueItems": true,
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Artifact"
+              }
+            }
+          }
+        },
+        "ArtifactBundles": {
+          "type": "object",
+          "properties": {
+            "bundles": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ArtifactBundleSpec"
+              }
+            },
+            "syncStatus": {
+              "$ref": "#/components/schemas/SyncStatus"
+            }
+          }
+        },
+        "SyncStatus": {
+          "type": "object",
+          "properties": {
+            "lastSyncTime": {
+              "type": "string"
+            },
+            "resourceVersion": {
+              "type": "string"
+            },
+            "synchedFrom": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "securitySchemes": {
+        "bearer-jwt": {
+          "type": "http",
+          "description": "NSP-issued JWT, sent as 'Authorization: Bearer \u003Ctoken\u003E'.",
+          "scheme": "bearer",
+          "bearerFormat": "JWT"
+        }
+      }
+    }
+  }

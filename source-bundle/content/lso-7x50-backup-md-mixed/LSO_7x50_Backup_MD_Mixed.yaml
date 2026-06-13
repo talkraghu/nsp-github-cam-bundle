@@ -1,0 +1,890 @@
+version: '2.0'
+
+LSO_7x50_Backup_MD_Mixed:
+  type: direct
+  tags:
+    - LSO
+    - 7x50 MD NE Backup
+    
+    
+  workflow_meta:
+    title: NE Backup on the Model Driven and Mixed Mode devices
+    author: NOKIA R&D 
+    version: '1.2.3'
+    license: 
+    package: LSOM 7x50 MD/Mixed NE Backup
+    deprecated: false
+    dependencies:
+      platform:
+        nspOS: ['21.11']
+      nodal:
+        - type: 'Nokia 7x50'
+          releases: ['19.10','20.x','21.x']
+          mgmtmode: ['mixed', 'model-driven']  
+
+  input:
+    - nodeType
+    - neName
+    - neId
+    - nodeIp
+    - ne_fdn
+    - retentionPolicy
+    - retentionValue
+    - debugFilename: ''
+    - backupCertificates: 'no'
+  
+  vars:
+    dirName: /lsom/neBackup/Nokia
+    lst_length: 0
+    alarmFdn: "null"
+    getTime: <% get_time() %>
+    stop: "([\\s\\S]*)(\\^*)[\r\n]*(MINOR:)([\\s\\S]*)"
+    backupStatus: "Triggering Backup"
+    backupFiles: []
+    lsoInfo: "Failed"
+    lsoStageError: "Failed"
+    stage: "null"
+    sessionId: "null"
+    
+  output:
+    lsoInfo: <% $.lsoInfo %>
+
+  output-on-error:
+    lsoInfo: <% $.lsoInfo %>
+    
+  
+  tasks:   
+    pingNode:
+      action: nsp.ping
+      input:
+        host: <% $.nodeIp %>
+        duration: 5
+      publish:
+        lsoInfo: <% task().result %>
+        backupCertificates: <% $.backupCertificates.toLower() %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "NE is not reachable"
+        stage: "preCheck"
+      on-success:        
+        - readingBof
+      on-error:
+        - checkAlarm
+    
+    
+    readingBof:
+      action: nsp.mdm_cli
+      input:
+        neId: <% $.neId %>
+        stopOn: <% $.stop %>
+        idleTimeOut: 120
+        closeSession: false
+        cmds:
+          - /!classic-cli
+          - environment no more
+          - show bof
+          - exit all
+      publish:
+        lsoInfo:  <% task().result %>
+        sessionId:  <% task().result.sessionId %>
+        showBofResult : <% task().result.responses[2] %>
+      publish-on-error:
+        lsoStageError: <% task().result %>     
+        lsoInfo: "Reading bof info on node failed"
+        stage: "preCheck"
+      on-success:
+        - processingBof
+      on-error:
+        - PreChecks
+
+
+    processingBof:
+      action: nsp.textFSM
+      input:
+        response: <% $.showBofResult %>
+        template: |
+          Value PrimaryConfig (\S+)
+          Value LicenseFile (\S+)
+          
+          Start
+            ^BOF -> ReadData
+
+          ReadData
+            ^\s+primary-config\s+${PrimaryConfig}
+            ^\s+license-file\s+${LicenseFile} -> Record
+      publish:
+        lsoInfo:  <% task().result %>
+        remotePrimaryConfig:  <% regex('ftp').search(task().result.data[0].PrimaryConfig) %>
+        remoteLicenseFile:  <% regex('ftp').search(task().result.data[0].LicenseFile) %>
+        configFlashDrive: <% task().result.data[0].PrimaryConfig.split("\\")[0] %> 
+        licenseFlashDrive: <% task().result.data[0].LicenseFile.split("\\")[0] %>
+        licenseFile: <% task().result.data[0].LicenseFile.split("\\")[-1] %>
+        primaryConfigFileName: <% task().result.data[0].PrimaryConfig.split("\\")[-1].split(".cfg")[0] %>      
+      publish-on-error:
+        lsoStageError:  <% task().result %>     
+        lsoInfo: "Processing bof details failed for NE"    
+        stage: "preCheck"      
+      on-success:
+        - isConfigfileSavedOnDevice
+      on-error:
+        - PreChecks       
+
+        
+    isConfigfileSavedOnDevice:
+      action: nsp.assert
+      input:
+        input:  <% $.remotePrimaryConfig %>
+        expected: null
+        shouldFail: true
+      publish:
+        lsoInfo:  <% task().result %>
+      publish-on-error:
+        lsoStageError: "File path is not on compact flash of node <% $.neName %>. NE backup does not support this remote location."
+        lsoInfo: "File path is not on compact flash of node <% $.neName %>. NE backup does not support this remote location." 
+        stage: "preCheck"
+      on-success:
+        - getFileDetails
+      on-error:
+        - PreChecks       
+        
+        
+    getFileDetails:
+      action: nsp.mdm_cli
+      input:
+        neId: <% $.neId %>
+        stopOn: <% $.stop %>     
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!classic-cli
+          - environment no more
+          - file dir <% $.configFlashDrive %>
+      publish:
+        fileDirResponse: <% task().result.responses[2] %>
+        sysPki: <% regex('system\-pki').search(task().result.responses[2]) %>
+        lsoInfo:  <% task().result %>
+      publish-on-error:
+        lsoStageError:  <% task().result %>
+        lsoInfo: "Failed to get config file details from NE"     
+        stage: "preCheck"
+      on-success:
+        - backupWithDebugFile: <% $.debugFilename != ''  %>
+        - backupWithoutDebugFile: <% $.debugFilename = ''  %>        
+      on-error:
+        - PreChecks       
+
+
+    backupWithDebugFile:
+      action: nsp.textFSM
+      input:
+        response: <% $.fileDirResponse %>
+        template: |
+          Value Key,Required NAME (<% $.debugFilename %>|bof\.cfg$|<% $.primaryConfigFileName %>\.\w+$)
+          Value SIZE (\S+)
+          Value TIMEDATE (\S+\s+\S+)
+                    
+          Start
+            ^${TIMEDATE}\s+${SIZE}\s+${NAME}? -> Record
+      publish:
+        lsoInfo: <% task().result %>
+        fileNameList: <% task().result.data.NAME %>
+      publish-on-error:
+        lsoStageError:  <% task().result %>
+        stage: "preCheck"
+      on-success:
+        - getCertificates: <% $.sysPki != null and $.backupCertificates = 'yes' %>
+        - PreChecks: <% $.sysPki = null or $.backupCertificates != 'yes' %>
+      on-error:
+        - PreChecks
+ 
+    
+    backupWithoutDebugFile:
+      action: nsp.textFSM
+      input:
+        response: <% $.fileDirResponse %>
+        template: |
+          Value Key,Required NAME (bof\.cfg$|<% $.primaryConfigFileName %>\.\w+$)
+          Value SIZE (\S+)
+          Value TIMEDATE (\S+\s+\S+)
+                    
+          Start
+            ^${TIMEDATE}\s+${SIZE}\s+${NAME}? -> Record
+      publish:
+        lsoInfo: <% task().result %>
+        fileNameList: <% task().result.data.NAME %>
+      publish-on-error:
+        lsoStageError:  <% task().result %>
+        lsoInfo: "Failed to process backup files from NE" 
+        stage: "preCheck"
+      on-success:
+        - getCertificates: <% $.sysPki != null and $.backupCertificates = 'yes' %>
+        - PreChecks: <% $.sysPki = null or $.backupCertificates != 'yes' %>        
+      on-error:
+        - PreChecks       
+
+
+    getCertificates:
+      join: 0
+      action: nsp.mdm_cli
+      input:
+        neId: <% $.neId %>
+        stopOn: <% $.stop %>        
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!classic-cli
+          - environment no more
+          - file dir <% $.configFlashDrive %>/<% $.sysPki %>
+      publish:
+        crtfile: <% task().result.responses[2] %>   
+        lsoInfo:  <% task().result %>
+        crtfileLen: <% (regex('\d+ File').search(task().result.responses[2])).split(" ")[0]%>
+      publish-on-error:
+        lsoStageError:  <% task().result %>
+        lsoInfo: "Failed to get certificates from NE" 
+        stage: "preCheck"
+      on-success:
+        - crtList
+      on-error:
+        - PreChecks        
+
+        
+    crtList:
+      action: nsp.textFSM
+      input:
+        response: <% $.crtfile %>
+        template: |
+          Value Key,Required NAME (\w+\.crt)
+          Value SIZE (\S+)
+          Value TIMEDATE (\S+\s+\S+)
+                    
+          Start
+            ^${TIMEDATE}\s+${SIZE}\s+${NAME}? -> Record
+      publish:
+        crtList: <% task().result.data.NAME%>
+      on-success:
+        - PreChecks
+        
+
+    PreChecks:
+      join: 0
+      action: nsp.assert
+      input:
+        input: <% $.stage %>
+        expected: "null"
+        shouldFail: true
+      publish:
+        lsoInfo:  <% task().result %>
+        timestamp: <% regex(" ").replace(get_UTC_time(),"-") %>
+      publish-on-error:
+        lsoStageError: <% $.lsoStageError %>
+        lsoInfo: <% $.lsoInfo %>
+      on-success:
+        - checkBofSupport
+      on-error:
+        - checkAlarm
+        - terminateSession: <% $.sessionId!="null" %>   
+
+
+    checkBofSupport:
+      action: nsp.mdm_cli
+      input:
+        neId: <% $.neId %>
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!md-cli
+          - environment no more
+          - tree flat | match "bof image primary-location"
+      publish:
+        lsoInfo: <% task().result %>
+        bofSupport: <% task().result.responses[2] %>
+      publish-on-error:
+        lsoStageError: <% task().result %> 
+        stage: "adminSave" 
+      on-success:
+        - validateMixedMode
+      on-error:
+        - SavingConfig        
+
+    validateMixedMode:
+      action: nsp.mdm_cli
+      retry:
+        delay: 10
+        count: 5      
+      input:
+        neId: <% $.neId %>        
+        stopOn: <% $.stop %>  
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!classic-cli
+          - show system information | match "Configuration Mode Cfg"
+      publish:
+        lsoInfo: <% task().result %>
+        configMode: <% task().result.responses[1].split(" ")[-1] %> 
+      on-success:
+        - savingNodeConfig: <% $.bofSupport.startsWith("bof") = false and $.configMode = 'model-driven' %>
+        - savingNodeConfigInMDMode: <% $.bofSupport.startsWith("bof") = true and $.configMode = 'model-driven' %>
+        - savingNodeConfigInClassic: <% $.bofSupport.startsWith("bof") = false and $.configMode = 'mixed' %>
+        - savingNodeConfigInMdClassic: <% $.bofSupport.startsWith("bof") = true and $.configMode = 'mixed' %>
+      on-error:
+        - SavingConfig        
+
+    savingNodeConfig:
+      action: nsp.mdm_cli
+      retry:
+        delay: 10
+        count: 5      
+      input:
+        neId: <% $.neId %>        
+        stopOn: <% $.stop %>  
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!classic-cli
+          - bof save "<% $.configFlashDrive %>"
+          - /!md-cli
+          - admin save
+      publish:
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Saving config failed on node"
+        stage: "adminSave"
+      on-success: 
+        - SavingConfig
+      on-error:
+        - SavingConfig
+
+
+    savingNodeConfigInMDMode:
+      action: nsp.mdm_cli
+      retry:
+        delay: 10
+        count: 5      
+      input:
+        neId: <% $.neId %>
+        stopOn: <% $.stop %>  
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!md-cli
+          - admin save bof "<% $.configFlashDrive %>"
+          - admin save
+      publish:
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Saving config failed on node"
+        stage: "adminSave"
+      on-success: 
+        - SavingConfig
+      on-error:
+        - SavingConfig         
+
+    savingNodeConfigInClassic:
+      action: nsp.mdm_cli
+      retry:
+        delay: 10
+        count: 5      
+      input:
+        neId: <% $.neId %>        
+        stopOn: <% $.stop %>  
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!classic-cli
+          - bof save "<% $.configFlashDrive %>"
+          - admin save
+      publish:
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Saving config failed on node"
+        stage: "adminSave"
+      on-success: 
+        - SavingConfig
+      on-error:
+        - SavingConfig
+    
+    savingNodeConfigInMdClassic:
+      action: nsp.mdm_cli
+      retry:
+        delay: 10
+        count: 5      
+      input:
+        neId: <% $.neId %>        
+        stopOn: <% $.stop %>  
+        sessionId: <% $.sessionId %>
+        closeSession: False
+        cmds:
+          - /!md-cli
+          - admin save bof "<% $.configFlashDrive %>"
+          - /!classic-cli
+          - admin save
+      publish:
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Saving config failed on node"
+        stage: "adminSave"
+      on-success: 
+        - SavingConfig
+      on-error:
+        - SavingConfig
+    
+    SavingConfig:
+      join: 0
+      action: nsp.assert
+      input:
+        input: <% $.stage %>
+        expected: "null"
+        shouldFail: true
+      publish:
+        lsoInfo:  <% task().result %>
+      publish-on-error:
+        lsoStageError: <% $.lsoStageError %>
+        lsoInfo: <% $.lsoInfo %>
+      on-success:
+        - createBackupDir
+      on-error:
+        - checkAlarm
+        - terminateSession: <% $.sessionId!="null" %>
+        
+
+    createBackupDir:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/directory?dirName=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>"
+        method: POST
+      publish:
+        lsoInfo: <% task().result %>
+        backupFolder: "created"
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Backup directory creation on File Server has failed. Please check if it has enough disc space or if its functional"  
+        stage: "fileTransfer"      
+      on-success:
+        - getLicenseFile: <% $.licenseFlashDrive != '' and $.remoteLicenseFile = null  %>
+        - transferConfigFiles: <% $.licenseFlashDrive  = ''  or ($.licenseFlashDrive != '' and $.remoteLicenseFile = 'ftp')%>
+      on-error:
+        - TransferringFiles
+        
+
+    getLicenseFile:
+      join: 0
+      workflow: LSO_Transfer_Files_NE transferType='fromNe' sourcePath='<% $.licenseFlashDrive %>/<% $.licenseFile %>' destinationPath='<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>'  neId='<% $.neId %>'
+      publish:
+        lsoInfo: <% task(getLicenseFile).result %> 
+        lst_length: <% $.lst_length + 1 %> 
+        backupStatus: "starting transfering file from node to server"
+      publish-on-error:
+        lsoInfo : "File transfer from NE to File Server failed. Please check if FTP policy is attached to NE"
+        lsoStageError: <% task().result %>
+        stage: "fileTransfer"        
+      on-success:
+        - transferConfigFiles
+      on-error:
+        - TransferringFiles
+
+    
+    transferConfigFiles:
+      join: 0
+      with-items: fileName in <% $.fileNameList %>
+      concurrency: 1
+      workflow: LSO_Transfer_Files_NE transferType='fromNe' sourcePath='<% $.configFlashDrive %>/<% $.fileName %>' destinationPath='<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>'  neId='<% $.neId %>'
+      publish:
+        lsoInfo: <% task(transferConfigFiles).result %>
+        backupStatus: "starting transfering file from node to server"
+      publish-on-error:
+        backupStatus: "Backup Failed"
+        lsoInfo: "File transfer from NE to File Server failed. Please check if FTP policy is attached to NE"
+        lsoStageError: <% task(transferConfigFiles).result.last().result %>
+        stage: "fileTransfer"
+      on-success:
+        - TransferringFiles: <% $.sysPki = null or $.backupCertificates != 'yes' or int($.crtfileLen) = 0 %>
+        - createCrtDir: <% $.sysPki != null and $.backupCertificates = 'yes' and int($.crtfileLen) > 0 %>
+        - certificateStatus: <%  $.backupCertificates = 'yes' and ($.sysPki = null  or int($.crtfileLen) = 0 ) %>
+        - debugFileStatus: <% $.fileNameList.contains($.debugFilename) != true and $.debugFilename != '' %>
+      on-error:
+        - TransferringFiles
+
+
+    certificateStatus:
+      join: 0
+      publish:
+        lsoStageError: "Certificate folder or certificates are not avialble in Node"
+        lsoInfo: "Certificate folder or certificates are not avialble in Node"
+
+    debugFileStatus: 
+      join: 0
+      publish:
+        lsoStageError: "Debug fileName given as input, is not present on the node. Hence it will not be backed up" 
+        lsoInfo: "Debug fileName given as input, is not present on the node. Hence it will not be backed up" 
+
+    
+    createCrtDir:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/directory?dirName=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>/<% $.sysPki %>"
+        method: POST
+      publish:
+        lsoInfo: <% task().result %>
+        lst_length: <% $.lst_length + 1 %>
+      publish-on-error:
+        lsoInfo: "Certificate backup directory creation on File Server has failed. Please check if it has enough disc space or if its functional"
+        lsoStageError: <% task().result %>
+        stage: "fileTransfer"
+      on-success:
+        - getcrtFiles
+      on-error:
+        - TransferringFiles      
+       
+    getcrtFiles:
+      join: 0
+      with-items: crt in <% $.crtList %>
+      concurrency: 1
+      workflow: LSO_Transfer_Files_NE transferType='fromNe' sourcePath='<% $.configFlashDrive %>/<% $.sysPki %>/<% $.crt %>' destinationPath='<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>/<% $.sysPki %>'  neId='<% $.neId %>'
+      publish:
+        lsoInfo: <% task(getcrtFiles).result %>
+        backupStatus: "starting transfering file from node to server"
+      publish-on-error:
+        lsoInfo: "Certificate files transfer from NE to File Server failed"
+        lsoStageError: <% task().result %>
+        stage: "fileTransfer"
+      on-success:
+        - TransferringFiles
+      on-error:
+        - TransferringFiles
+
+
+    TransferringFiles:
+      join: 0
+      action: nsp.assert
+      input:
+        input: <% $.stage %>
+        expected: "null"
+        shouldFail: true
+      publish:
+        lsoInfo:  <% task().result %>
+      publish-on-error:
+        lsoStageError: <% $.lsoStageError %>
+        lsoInfo: <% $.lsoInfo %>
+      on-success:
+        - createBackupBundle
+      on-error:
+        - checkAlarm
+        - clearDepravedDir
+
+    clearDepravedDir:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/directory?dirNames=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>&forceDelete=true"
+        method: DELETE       
+      publish:
+        result: <% task().result %>
+      on-success:
+        - terminateSession: <% $.sessionId!="null" %>
+    
+    createBackupBundle:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/directory/zip?sourceDir=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>&zipFilePath=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>.zip"
+        method: POST   
+      publish:
+        lsoInfo: <% task().result %>
+        backupFilename: <% $.timestamp %>.zip
+        backupStatus: "Successfully done backup operation"
+      publish-on-error:
+        lsoInfo: "Zipping of uploaded backup files failed" 
+        lsoStageError: <% task().result %>
+        stage: "postProcess"        
+      on-success:
+        - listFiles
+      on-error:    
+        - deletingFolder
+
+    
+    listFiles:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/directory?dirName=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>"
+      publish:
+        backupFiles : <% task().result.content.data.fileName %>
+        lsoInfo: <% task().result %>
+        backupStatus: "Successfully done backup operation"
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to list the files in folder"
+        stage: "postProcess"    
+      on-success:
+        - deletingFolder
+      on-error:   
+        - deletingFolder
+
+    
+    deletingFolder:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/directory?dirNames=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.timestamp %>&forceDelete=true"
+        method: DELETE       
+      publish:
+        result: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Deleting backup folder failed on File Server"
+        stage: "postProcess"
+      on-success:
+        - validateBackupBundle: <% $.backupStatus="Successfully done backup operation" %>
+        - PostProcessing: <% $.backupStatus!="Successfully done backup operation" %>
+      on-error:
+        - validateBackupBundle
+  
+  
+    validateBackupBundle:
+      join: 0
+      action: nsp.assert
+      input:
+        input:  <% len($.backupFiles)  %>
+        expected: <% len($.fileNameList) + $.lst_length %>
+        shouldFail: true
+      publish:
+        result:  <% task().result %>
+      publish-on-error:
+        lsoStageError:  <% task().result %>     
+        lsoError: "Backup bundle validation failed"
+        stage: "postProcess"
+      on-success:
+        - backupSuccess
+      on-error:
+        - PostProcessing
+    
+    backupSuccess:
+      join: 0  
+      publish:
+        lsoInfo: <% task().result %>
+        backupStatus: "Successfully done backup operation"
+      on-success:
+        - PostProcessing       
+
+
+    PostProcessing:
+      join: 0
+      action: nsp.assert
+      input:
+        input: <% $.stage %>
+        expected: "null"
+        shouldFail: true
+      publish:
+        lsoInfo:  <% task().result %>
+      publish-on-error:
+        lsoStageError: <% $.lsoStageError %>
+        lsoInfo: <% $.lsoInfo %>
+      on-success:
+        - checkAlarm:  <% $.retentionPolicy = null and $.retentionValue = null %>
+        - terminateSession: <% $.sessionId != "null" and $.retentionPolicy = null and $.retentionValue = null %>
+        - BackupRetention:  <% $.retentionPolicy != null and $.retentionValue != null  %>
+        - BackupRetentionTriggerFailed:  <% ($.retentionPolicy != null and $.retentionValue = null) or ($.retentionPolicy = null and $.retentionValue != null)  %>
+      on-error:
+        - checkAlarm
+        - terminateSession: <% $.sessionId!="null" %>
+
+
+    BackupRetention:
+      join: 0
+      workflow: LSO_7x50_Backup_MD_Mixed_Retention nodeType='<% $.nodeType %>' neName='<% $.neName %>' retentionPolicy='<% $.retentionPolicy %>' retentionValue='<% $.retentionValue %>' 
+      publish:
+        lsoInfo: <% task(BackupRetention).result %>
+        backupStatus: "Successfully done backup operation"
+      publish-on-error:
+        stage: "BackupRetention"
+        retentionStatus: "Failed"
+        lsoInfo: "Backup Successful but unable to trigger backup retention policy on the NE. Kindly check the stage details for more info"
+        backupStatus: <% task(BackupRetention).result.lsoInfo  %>   
+        lsoStageError: <% task(BackupRetention).result.lsoStageError %>
+        
+      on-success:
+        - checkAlarm
+        - terminateSession: <% $.sessionId!="null" %>
+      on-error:
+        - checkAlarm
+        - terminateSession: <% $.sessionId!="null" %>
+    
+    BackupRetentionTriggerFailed:
+      join: 0
+      action: std.fail
+      input:
+        error_data: "Backup Successful but unable to trigger backup retention policy on the NE. Kindly check the stage details for more info"
+      publish-on-error:
+        retentionStatus: "Failed"
+        lsoStageError: "Backup retention not triggered as user provided only one of the input values at the time of operation creation. retentionPolicy: <% $.retentionPolicy %> and retentionValue: <% $.retentionValue %>. Both attribute values are required to trigger a Backup Retention on the node"
+        lsoInfo: <% task().result %>
+        backupStatus: <% task().result %>
+        
+      on-error:
+        - checkAlarm
+        - terminateSession: <% $.sessionId!="null" %>
+        
+    checkAlarm:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://fault-management/FaultManagement/rest/api/v2/alarms/details?alarmFilter=alarmName%2520like%2520'%2525BootableConfigBackupFailed%2525'and%2520neId%253D'<% $.neId %>'"
+        method: GET
+        contentType: 'application/json'
+        accept: "application/json"
+        cert: "/opt/nsp/os/ssl/certs/nsp/nsp.pem"        
+      publish:
+        result : <% task().result %>
+        alarmResponse : <% task().result.content.response.data %>     
+        epochTimestamp: <% [$.getTime,"000"].join("") %>
+      publish-on-error:
+        lsoStageError : <% task().result %>   
+        epochTimestamp: <% [$.getTime,"000"].join("") %>        
+      on-success:
+        - alarmChecked: <% $.alarmResponse = [] and $.backupStatus = "Successfully done backup operation" %>  
+        - raiseAlarm: <% $.backupStatus != "Successfully done backup operation"  and ($.alarmResponse = [] or $.alarmResponse != []) %>
+        - clearAlarm: <% $.alarmResponse != [] and $.backupStatus = "Successfully done backup operation" %>
+      on-error:
+        - alarmFetchFailed
+    
+
+    terminateSession:
+      join: 0
+      action: nsp.mdm_cli
+      input:
+        neId: '<% $.neId %>'
+        cmds:
+          - /!classic-cli
+        sessionId: <% $.sessionId %>
+        stopOn: <% $.stop %>
+        closeSession: True
+        idleTimeOut: 120
+      publish:
+        result: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %> 
+    
+    alarmFetchFailed:
+      publish:   
+        result: "Fetching of alarm has failed"
+        
+    alarmChecked:
+      publish:
+        result: "Backup Successful" 
+
+    clearAlarm:
+      action: nsp.https
+      input:
+        url: "https://fault-management/FaultManagement/rest/api/v1/application-alarm"
+        method: POST
+        contentType: 'application/json'     
+        body: |
+              {       
+                "severity": "cleared",
+                "alarmName": "BootableConfigBackupFailed",
+                "probableCause": "fileTransferFailure",
+                "alarmType": "configurationAlarm",
+                "neId": "<% $.neId %>",
+                "neName": "<% $.neName %>",
+                "affectedObject": "<% $.ne_fdn %>",
+                "affectedObjectType": "equipment.NetworkElement",
+                "affectedObjectName": "<% $.neName %>",
+                "lastTimeDetected": <% $.epochTimestamp %>,
+                "implicitlyCleared": true,
+                "adminState": "unlocked",
+                "sourceType": "mdm",
+                "sourceSystem": "fdn:app:mdm-ami-cmodel",
+                "sources": ["<% $.ne_fdn %>"],
+                "isTransient": false,
+                "manuallyModifiedProperties": 0,
+                "rootCause": true,
+                "@type": "fm.Alarm"
+              }
+      publish:
+        result : <% task().result %>
+      publish-on-error:
+        lsoStageError : <% task().result %>
+        lsoInfo: "Alarm not getting cleared although backup is successful"
+      on-success:
+        - alarmCleared
+      on-error:
+        - alarmNotCleared
+        
+    alarmCleared:
+      publish:
+        result: "Backup Successful and successfully cleared backup failure alarm"         
+    
+    alarmNotCleared:
+      publish:
+        lsoStageError: "Backup Successful but clearing of alarm for NE has failed"
+
+        
+    raiseAlarm:
+      join: 0
+      action: nsp.https
+      input:
+        url: "https://fault-management/FaultManagement/rest/api/v1/application-alarm"
+        method: POST
+        contentType: 'application/json'     
+        body: |
+              {
+                "severity": "major",
+                "alarmName": "BootableConfigBackupFailed",
+                "probableCause": "fileTransferFailure",
+                "alarmType": "configurationAlarm",
+                "additionalText": "<% $.lsoInfo %>",
+                "neId": "<% $.neId %>",
+                "neName": "<% $.neName %>",
+                "affectedObject": "<% $.ne_fdn %>",
+                "affectedObjectType": "equipment.NetworkElement",
+                "affectedObjectName": "<% $.neName %>",
+                "lastTimeDetected": <% $.epochTimestamp %>,
+                "implicitlyCleared": true,
+                "adminState": "unlocked",
+                "sourceType": "mdm",
+                "sourceSystem": "fdn:app:mdm-ami-cmodel",
+                "sources": ["<% $.ne_fdn %>"],
+                "isTransient": false,
+                "manuallyModifiedProperties": 0,
+                "rootCause": true,
+                "@type": "fm.Alarm"
+              }
+      publish:
+        result : <% task().result %>
+      publish-on-error:
+        result: <% task().result %>
+      on-success:
+        - raisedAlarm
+      on-error:
+        - alarmNotRaised
+        
+    raisedAlarm:
+      publish:
+        result: <% $.lsoInfo %>
+      on-complete:
+        - backupFailed
+
+            
+    alarmNotRaised:
+      publish:
+        result: <% $.lsoInfo %>
+      on-complete:
+        - backupFailed
+
+
+    backupFailed:
+      join: 0
+      action: std.fail
+      input:
+        error_data: <% $.lsoInfo %>   
+      publish-on-error:
+        lsoStageError: <% $.lsoStageError %>
+        lsoInfo: <% task().result %>

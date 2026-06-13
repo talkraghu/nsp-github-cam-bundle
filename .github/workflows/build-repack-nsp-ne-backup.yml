@@ -1,0 +1,40 @@
+# #cursor generated code - start
+name: build-repack-nsp-ne-backup
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "source-bundle/**"
+      - "builder/**"
+      - "scripts/**"
+      - ".github/workflows/build-repack-nsp-ne-backup.yml"
+  pull_request:
+    paths:
+      - "source-bundle/**"
+      - "builder/**"
+      - "scripts/**"
+      - ".github/workflows/build-repack-nsp-ne-backup.yml"
+  workflow_dispatch:
+
+jobs:
+  repack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Repack bundle
+        run: |
+          chmod +x scripts/repack.sh
+          ./scripts/repack.sh
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsp-ne-backup-bundle
+          path: dist/*.zip
+# #cursor generated code - end

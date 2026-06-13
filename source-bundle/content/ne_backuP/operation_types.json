@@ -1,0 +1,12 @@
+{
+  "operation-type": 
+    {
+      "name": "nsp-new-ne-back-up",
+      "description": "Operation for NE Backup",
+      "category": "backup",
+      "created-by": "nsp_internal_system_user",
+      "operation-model": "nsp-new-ne-back-up.yang",
+      "profile": "nsp_new_ne_back_up_profile.yaml",
+      "life-cycle-state": "released"
+    }  
+}

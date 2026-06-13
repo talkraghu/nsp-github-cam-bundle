@@ -1,0 +1,141 @@
+version: '2.0'
+
+LSO_7x50_Backup_Classic:
+  type: direct
+  tags:
+    - LSO
+    - 7x50 Classic NE Backup
+  
+  workflow_meta:
+    title:   Performs NE Backup on the classic mode devices
+    author: NOKIA R&D
+    version: '1.2.1'
+    license: 
+    package: LSOM 7x50 CLASSIC NE Backup
+    deprecated: false
+    dependencies:
+      platform:
+        nspOS: ['21.11']
+        nfmpOS: ['21.11']
+      nodal:
+        - type: 'Nokia 7x50'
+          releases: ['19.10','20.x','21.x']
+          mgmtmode: ['classic']  
+
+  input:
+    - neId
+
+  vars:
+    backupstatus: "unknown"
+
+  output:
+    lsoInfo: <% $.lsoInfo %>
+
+  output-on-error:
+    lsoInfo: <% $.lsoInfo %>
+
+  tasks:
+    triggeringBackup:
+      action: nsp.https
+      retry:
+        count: 24
+        delay: 5
+      input:
+        url: "https://rest-gateway/rest-gateway/rest/api/v1/location/services/samo_server"
+        method: GET
+      publish:
+        lsoInfo: "Triggering Backup"
+        nfmpBaseUrl: <% task().result.content.response.data.services[0].instances.effectiveBaseUrl %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Fetching NFMP base URLs from location services has failed"
+      on-success:        
+        - GetnfmpBaseUrl
+      on-error:
+        - backupTaskFailed        
+       
+    GetnfmpBaseUrl:
+      with-items: nfmpUrl in <% $.nfmpBaseUrl %>
+      concurrency: 1
+      action: nsp.https
+      input:
+        url: '<% $.nfmpUrl %>/v1/managedobjects/searchWithFilter'
+        method: POST
+        body:
+          fullClassName: 'netw.NetworkElement'
+          filterExpression: "name= '<% $.neId %>'"
+      publish:
+        lsoInfo: "Fetching Nfmp Base Url"
+        nfmpBaseUrl: <% task().result.where(len($.content) > 0).select($.url.split('/v1/managedobjects/searchWithFilter')[0]).first() %>        
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Fetching NFMP base URL for NE failed" 
+      on-success:        
+        - savingNodeConfig
+      on-error:
+        - backupTaskFailed
+        
+    savingNodeConfig:
+      action: nsp.https
+      input:
+        url: '<% $.nfmpBaseUrl %>/v2/sw/BackupRestoreManager/backup/network:<% $.neId %>:backupRestoreManager'
+        method: POST
+      publish:
+        lsoInfo : <% task().result %> 
+      publish-on-error:
+        lsoInfo: "Triggering backup on classic NE has failed on NFMP"
+        lsoStageError : <% task().result %>
+      on-success:
+        - fetchBackupStatus
+      on-error:
+        - backupTaskFailed
+            
+            
+    fetchBackupStatus:
+      action: nsp.https
+      retry:
+        count: 30
+        delay: 20
+        break-on:  <% $.operationsDetails = "success" or $.operationsDetails = "failure" %>
+        continue-on: <% $.operationsDetails != "success" and $.operationsDetails != "failure" %>
+      input:
+        url: '<% $.nfmpBaseUrl %>/v1/managedobjects/searchWithFilter'
+        method: POST
+        body:
+          fullClassName: 'sw.BackupRestoreManager'
+          filterExpression: "routerId='<% $.neId %>'"             
+      publish:
+        lsoInfo: <% task().result %>
+        operationsDetails: <% task().result.content.select($.lastNmsBootBackupState).first() %>
+        failedDetails: <% task().result.content.select($.lastFailureDetails).first() %>
+        backupFilename: <% task().result.content.select($.lastSuccessfulBootBackupTimestamp).first() %>
+      publish-on-error:
+        lsoInfo: "Failed: fetching backup status on classic NE has failed"
+        lsoStageError : <% task().result %>        
+      on-complete:
+        - backupSuccess : <% $.operationsDetails = 'success' %>
+        - backupFailed: <% $.operationsDetails != 'success' %>
+      on-error:
+        - backupTaskFailed
+        
+
+    backupFailed:
+      action: std.fail
+      input: 
+        error_data: <% $.failedDetails %>
+      publish-on-error:
+        lsoInfo: <% task().result %>
+
+    backupSuccess:
+      publish:
+        lsoInfo: "Successfully done back up operation on classic node"
+        
+
+    backupTaskFailed:
+      join: 0
+      action: std.fail
+      input:
+        error_data: <% $.lsoInfo %>       
+      publish-on-error:
+        lsoStageError: "<% $.lsoInfo %>: <% $.lsoStageError %>"
+        lsoInfo: <% task().result %>

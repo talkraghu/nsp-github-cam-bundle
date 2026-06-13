@@ -1,0 +1,28 @@
+# #cursor generated code - start
+name: deploy-nsp-lab
+
+# Manual deploy: requires secrets (see repo README).
+on:
+  workflow_dispatch:
+
+jobs:
+  upload-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Repack bundle
+        run: |
+          chmod +x scripts/repack.sh scripts/upload-and-install.sh
+          ./scripts/repack.sh
+
+      - name: Upload to file service and install
+        env:
+          NSP_BASE_URL: ${{ secrets.NSP_BASE_URL }}
+          CAM_TOKEN: ${{ secrets.CAM_TOKEN }}
+        run: ./scripts/upload-and-install.sh
+# #cursor generated code - end

@@ -1,0 +1,268 @@
+version: '2.0'
+
+LSO_7x50_Backup_MD_Mixed_Retention:
+  type: direct
+  tags:
+    - LSO
+    - 7x50 MD NE Backup
+    
+    
+  workflow_meta:
+    title: NE Backup Retention on the Model Driven and Mixed Mode devices
+    author: NOKIA R&D 
+    version: '1.2.0'
+    license: 
+    package: LSOM 7x50 MD/Mixed NE Backup
+    deprecated: false
+    dependencies:
+      platform:
+        nspOS: ['21.11']
+      nodal:
+        - type: 'Nokia 7x50'
+          releases: ['19.10','20.x','21.x']
+          mgmtmode: ['mixed', 'model-driven']  
+
+  input:
+    - nodeType
+    - neName
+    - retentionPolicy
+    - retentionValue
+  
+  vars:
+    dirName: /lsom/neBackup/Nokia
+    lst_length: 0
+    alarmFdn: "null"
+    getTime: <% get_time() %>
+    stop: "([\\s\\S]*)(\\^*)[\r\n]*(MINOR:)([\\s\\S]*)"
+    backupStatus: "Triggering Backup"
+    backupFiles: []
+    lsoInfo: "Failed"
+    stage: "null"
+    sessionId: "null"
+  
+  tasks:      
+    retentionlistFiles:
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/directory?dirName=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>"
+      publish:
+        backupFiles: <% task().result.content.data.orderBy($.creationTime).fileName %>
+        fileType: <% task().result.content.data.orderBy($.creationTime).fileType %>
+        creationTime: <% task().result.content.data.orderBy($.creationTime).creationTime %>
+        lsoInfo: <% task().result %>
+        backupStatus: "Successfully done backup operation"
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to list the zipfiles in folder"
+      on-success:
+        - retainCount: <%  $.retentionPolicy = 'countBasedPolicy' %>
+        - retainDate: <% $.retentionPolicy = 'daysBasedPolicy' %>
+        
+    retainDate:
+      join: 0
+      action:  std.javascript
+      input:
+        context: <% $ %>
+        script: |
+          var startTimelist = $.creationTime;
+          var backupFiles = $.backupFiles
+          var retentionDays = $.retentionValue
+          var len1 = startTimelist.length;
+          var currentDate = new Date();
+          var retentionDate = new Date(currentDate);
+          retentionDate.setHours(0,0,0);
+          var retentiontime = retentionDate.setDate(currentDate.getDate() - (retentionDays - 1) );
+          timelist= []
+          for(var j = 0 ; j < len1 ; j++)
+          {      
+              crtimelist = startTimelist[j].split(" ")
+              crtime= crtimelist[0]+'T'+crtimelist[1]+'Z'
+              humanFormat= new Date(crtime).valueOf();              
+              if ( humanFormat < retentiontime ) {
+                 var result = backupFiles[j].split($.neName +'/');
+                 timelist.push(result[1])
+              }
+            
+          }
+          return timelist;  
+      publish:
+        unRetainedList: <% task().result %>
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to fetch retention files based on days"
+      on-success:
+        - getOperDetails: <% len($.unRetainedList) > 0 %>
+    
+    retainCount:
+      join: 0
+      action: std.javascript
+      input:
+        context: <% $ %>
+        script: |
+          var backupFiles = $.backupFiles;
+          var len = backupFiles.length;
+          restoreLength = len - $.retentionValue
+          deletelist = []
+          if (restoreLength > 0){
+            for (var j = 0 ; j < restoreLength ; j++)
+            {
+              var result = backupFiles[j].split($.neName +'/');
+              deletelist.push(result[1])
+             }
+          }
+          return deletelist;
+      publish:
+        unRetainedList: <% task().result %>
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to fetch retention files based on count"
+      on-success:
+        - getOperDetails: <% len($.unRetainedList) > 0 %>
+
+    getOperDetails:
+      join: 0
+      with-items: unRetainedfile in <% $.unRetainedList %>
+      action: nsp.https
+      input:
+        url: "https://lsom-service/lsom/v1/restconf/operations/nsp-inventory:find"
+        method: POST
+        contentType: 'application/json'     
+        body: |
+           {
+            "input": {       
+                "xpath-filter": "/nsp-lso-operation:lso-operations/operation/executions/execution[name='<% $.neName %>_Backup']/nsp-ne-backup:nsp-ne-backup-execution[(contains('backupFilename','<% $.unRetainedfile %>'))]",
+                "depth": "2",
+                "offset": "0",
+                "limit": "6"
+             }
+           }
+        #resultFilter: $.content.values()
+        resultFilter: $.content['nsp-inventory'+':'+'output'].data
+      publish:
+        operDetails: <% task().result %>
+        lsoInfo: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to fetch the operation Details"
+      on-success:
+        - getOperTypeOperName
+
+
+    getOperTypeOperName:
+      action: std.javascript
+      input:
+        context: <% $ %>
+        script: |
+          var operDetail = $.operDetails;
+          var len = operDetail.length;
+          lst= []
+          for (var j = 0 ; j < len ; j++)
+            {
+              if (operDetail[j].content.length>0){
+                operDict = {}
+                b= operDetail[j].content
+                exDetails=b[0]['@']['nsp-model:identifier']
+                spl= exDetails.split("'")
+                spl= exDetails.split("'")
+                opertype= spl[1]
+                operName = spl[3]
+                operDict['opertype'] =spl[1]
+                operDict['operName'] =spl[3]
+                lst.push(operDict)
+              }
+                 
+             }
+          return lst;
+      publish:
+        exeDet: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to get operation details"
+      on-success:
+        - getExeCount
+
+    getExeCount:
+      with-items: exDe in <% $.exeDet %>
+      action: nsp.https
+      input:
+        url: "https://lsom-service/lsom/v1/restconf/data/nsp-lso-operation:lso-operations/operation=<% $.exDe['opertype'] %>,<% $.exDe['operName'] %>/executions"
+        resultFilter: len($.content['nsp-lso-operation'+':'+'executions'].execution)
+      publish:
+        NoOfExe: <% task().result.content %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to fetch execution count"
+      on-success:
+        - delOperExeDetails
+
+    delOperExeDetails:
+      action: std.javascript
+      input:
+        context: <% $ %>
+        script: |
+          var exeDet = $.exeDet;
+          var len = exeDet.length;
+          var NoOfExe =  $.NoOfExe;
+          operDeleteDict = []
+          execDeleteDict = []
+          for (var j = 0 ; j < len ; j++)
+            {
+              if (NoOfExe[j] < 2){                
+                operDeleteDict.push(exeDet[j])
+              }
+              else{
+                 execDeleteDict.push(exeDet[j])
+              } 
+             }
+          return [operDeleteDict,execDeleteDict];
+      publish:
+        operDel: <% task().result[0] %>
+        exeDel: <% task().result[1] %>
+        retentionStatus: "<% len($.unRetainedList) %> file(s) cleanedUp"
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to get execution details"
+      on-success:
+        - deletingOperation: <% len($.operDel) > 0 %>
+        - deletingExecution: <% len($.exeDel) > 0 %>
+        - deletingFile
+    
+    deletingOperation:
+      wait-before: 10
+      with-items: exDe in <% $.operDel %>
+      action: nsp.https
+      input:
+        url: "https://lsom-service/lsom/v1/restconf/data/nsp-lso-operation:lso-operations/operation=<% $.exDe['opertype'] %>,<% $.exDe['operName'] %>"
+        method: DELETE
+      publish:
+        operationDeleteDetails: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to delete the operation"
+        
+    deletingExecution:
+      with-items: exDe in <% $.exeDel %>
+      action: nsp.https
+      input:
+        url: "https://lsom-service/lsom/v1/restconf/data/nsp-lso-operation:lso-operations/operation=<% $.exDe['opertype'] %>,<% $.exDe['operName'] %>/executions/execution=<% $.neName %>_Backup/delete-execution"
+        method: POST
+      publish:
+        executionDeleteDetails: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to delete the execution "
+    
+    deletingFile:
+      with-items: fileName in <% $.unRetainedList %>
+      action: nsp.https
+      input:
+        url: "https://file-service/nsp-file-service-app/rest/api/v1/file?fileNames=<% $.dirName %>/<% $.nodeType %>/<% $.neName %>/<% $.fileName %>&forceDelete=true"
+        method: DELETE
+      publish:
+        fileDeletion: <% task().result %>
+      publish-on-error:
+        lsoStageError: <% task().result %>
+        lsoInfo: "Unable to delete the file "
+      

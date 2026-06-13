@@ -1,0 +1,7 @@
+# #cursor generated code - start
+*.zip
+builder/artifact-bundle-builder
+dist/
+.env
+*.pem
+# #cursor generated code - end

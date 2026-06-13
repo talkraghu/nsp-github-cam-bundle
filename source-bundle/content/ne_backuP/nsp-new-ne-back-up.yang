@@ -1,0 +1,115 @@
+module nsp-new-ne-back-up {
+  yang-version 1.1;
+  namespace "urn:nokia:nsp:model:lso:operation:nspnewbackup";
+  prefix lsonewbackup;
+
+  import nsp-lso-operation {
+    prefix nlo;
+  }
+
+  organization
+    "Nokia";
+  contact
+    "Nokia NSP Support Web <https://www.nokia.com>";
+  description
+    "NE Backup - Operation Model";
+
+
+  revision 2021-11-10 {
+          description
+      "Third revision";
+        /*
+        "Changes in this revision:
+         The mapping profile for this operation type has been changed to support phases.
+         Added the following new leaf in the container nsp-ne-backup-execution:
+         - retentionStatus
+         Added the following container nsp-ne-backup-operation:
+         - nsp-ne-backup-operation         
+         ";
+        */
+    reference
+      "";
+  }
+
+  revision 2021-04-30 {
+          description
+      "Second revision";
+        /*
+        "Changes in this revision:
+         Added the following new leaf in the container nsp-ne-backup-execution:
+         - neSoftwareVersion
+         Deprecated the following leaf in the container nsp-ne-backup-execution:
+         - info";
+         
+        */
+    reference
+      "";
+  }
+
+  revision 2020-11-10 {
+    description
+      "Initial revision";
+    reference
+      "";
+  }
+
+  augment "/nlo:lso-operations/nlo:operation" {
+    when "operation-type='nsp-new-backup'";
+    description
+      "Augmentation of nsp-new-backup operation config data.";
+    container nsp-new-ne-back-up-operation {
+      description
+        "State data container for NE backup execution.";
+       leaf retentionPolicy {
+
+        type enumeration {
+
+        enum countBasedPolicy;
+
+        enum daysBasedPolicy;
+
+        }
+        description
+          "Indicates retention should trigger or not";
+      }
+      leaf retentionValue {
+        type uint8 {
+             range "1 .. 100";
+         }
+        description
+          "Indicates value for the retention policy";
+      }
+    }
+  }
+  
+  augment "/nlo:lso-operations/nlo:operation/nlo:executions/nlo:execution" {
+    when "../../operation-type='nsp-new-backup'";
+    description
+      "Augmentation of nsp-new-backup execution state data.";
+    container nsp-new-ne-back-up-execution {
+      description
+        "State data container for NE backup execution.";
+      leaf backupFilename {
+        type string;
+        description
+          "Indicates the backup file created in the NSP.";
+      }
+      leaf neSoftwareVersion {
+        type string;
+        description
+          "Indicates the Network Element Version";
+      }
+      leaf retentionStatus {
+        type string;
+        description
+          "Indicates the Number of files deleted";
+      }
+      leaf info {
+        type string;
+        status deprecated;
+        description
+          "Indicates the additional info";
+      }     
+    }
+  }
+}
