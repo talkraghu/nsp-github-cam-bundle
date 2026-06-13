@@ -14,8 +14,8 @@ This repo is scoped to the **`cam-lso-deployer-app`** pilot: bundle name **`nsp-
 | [`scripts/extract-reference-zip.sh`](./scripts/extract-reference-zip.sh) | Unzip a reference **`nsp-ne-backup-1.41.0.zip`** into `source-bundle/` (then run [`strip-artifact-content.py`](./scripts/strip-artifact-content.py) if metadata still lists digests). |
 | [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload (`createDirectory=true`) unless **`SKIP_FILE_SERVICE_UPLOAD=1`**, then **`POST /cam/rest/api/<v>/artifactBundle/install`** (auto **`v3`/`v2`/`v1`** or **`v3`** only when skipping upload). |
 | [`scripts/uninstall-bundle.sh`](./scripts/uninstall-bundle.sh) | **`POST /cam/rest/api/<v>/artifactBundle/uninstall`** (v3) or **`.../unInstall`** (v1/v2) with JSON **`{"bundles":["<zip-basename>"]}`**; auto **`v3`/`v2`/`v1`** unless **`CAM_REST_API_VERSION`** is set. |
-| [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml) | Manual deploy: repack + **`upload-and-install.sh`** on self-hosted Windows. |
-| [`.github/workflows/uninstall-nsp-lab.yml`](./.github/workflows/uninstall-nsp-lab.yml) | Manual **`workflow_dispatch`** on self-hosted Windows; prompts for **`bundle_file_name`**. |
+| [`.github/workflows/deploy-nsp-cam-bundle.yml`](./.github/workflows/deploy-nsp-cam-bundle.yml) | Manual deploy: repack + **`upload-and-install.sh`** on self-hosted Windows. |
+| [`.github/workflows/uninstall-nsp-cam-bundle.yml`](./.github/workflows/uninstall-nsp-cam-bundle.yml) | Manual **`workflow_dispatch`** on self-hosted Windows; prompts for **`bundle_file_name`**. |
 | [`postman/cam-v3.json`](./postman/cam-v3.json) | OpenAPI export for CAM (v1 or v2 or v3 paths); align **`servers[0].url`** with your lab. |
 | [`reference/`](./reference/README.md) | Optional place for **`nsp-ne-backup-1.41.0.zip`**; see README for compliance notes. |
 | [`.env.example`](./.env.example) | Template for **`NSP_BASE_URL`** / **`CAM_TOKEN`**; copy to **`.env`** (gitignored). |
@@ -55,15 +55,15 @@ Environment overrides:
 
 [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) automatically **`source`s** **`.env`** from the repo root when the file exists.
 
-**Debug logging:** set **`UPLOAD_INSTALL_DEBUG=1`** or **`DEBUG=1`** in **`.env`** (or enable **Actions** re-run with debug logging so **`ACTIONS_STEP_DEBUG=true`**). Logs go to **stderr** with prefix **`[upload-and-install]`**; extra lines use **`[upload-and-install][debug]`**. **`CAM_TOKEN`** is never printed. In GitHub, set repository **Variable** **`UPLOAD_INSTALL_DEBUG`** to **`1`** (optional; wired in **`deploy-nsp-lab.yml`**).
+**Debug logging:** set **`UPLOAD_INSTALL_DEBUG=1`** or **`DEBUG=1`** in **`.env`** (or enable **Actions** re-run with debug logging so **`ACTIONS_STEP_DEBUG=true`**). Logs go to **stderr** with prefix **`[upload-and-install]`**; extra lines use **`[upload-and-install][debug]`**. **`CAM_TOKEN`** is never printed. In GitHub, set repository **Variable** **`UPLOAD_INSTALL_DEBUG`** to **`1`** (optional; wired in **`deploy-nsp-cam-bundle.yml`**).
 
 **CAM vs file service:** bundle **upload** uses the **file service** REST API (**`/nsp-file-service-app/rest/api/v1/file/uploadFile`**) with **`createDirectory=true`** so **`/nokia/nsp/cam/artifacts/bundle`** is created if missing (otherwise the API returns **HTTP 404**). **Install** calls **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/<v>/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`**. If **`CAM_REST_API_VERSION`** is **unset**, the script tries **`<v>` = `v3`**, then **`v2`**, then **`v1`** (gateways often expose only one). Set **`CAM_REST_API_VERSION`** to use a single version. See [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md).
 
 **Install only (no upload API):** if you copied **`*.zip`** into **`.../nokia/nsp/cam/artifacts/bundle/`** on the file-service volume (same path CAM uses), set **`SKIP_FILE_SERVICE_UPLOAD=1`** and **`BUNDLE_FILE_NAME=nsp-ne-backup-1.41.0.zip`** (or keep a local **`dist/*.zip`** so the script can take the basename). Install then defaults to **v3 only** unless **`CAM_REST_API_VERSION`** is set.
 
-**GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml).
+**GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-cam-bundle.yml`](./.github/workflows/deploy-nsp-cam-bundle.yml).
 
-**Network:** **`deploy-nsp-lab`** on **GitHub-hosted** `ubuntu-latest` cannot open **`https://100.120.x.x`** inside your lab (runners are on the public internet). You will see **`curl: (28) Failed to connect`**. Use a **self-hosted** runner inside the lab/VPN, or run **`./scripts/upload-and-install.sh`** from a host that can reach NSP, or only use Actions for **`build-repack-nsp-ne-backup`** (artifact) and deploy manually.
+**Network:** **`deploy-nsp-cam-bundle`** on **GitHub-hosted** `ubuntu-latest` cannot open **`https://100.120.x.x`** inside your lab (runners are on the public internet). You will see **`curl: (28) Failed to connect`**. Use a **self-hosted** runner inside the lab/VPN, or run **`./scripts/upload-and-install.sh`** from a host that can reach NSP, or only use Actions for **`build-repack-nsp-ne-backup`** (artifact) and deploy manually.
 
 If a token was ever pasted into a ticket, chat, or a tracked file, **rotate** it in your IdP and update **`.env`** / secrets.
 
@@ -79,7 +79,7 @@ Upload uses the same pattern as the CAM UI: **`POST .../nsp-file-service-app/res
 
 This environment cannot run your Windows runner or reach your lab (no Windows curl test from here). If **`NSP_TLS_INSECURE`** is unset locally, curl correctly refuses an untrusted lab chain (**`(60)`**). **Postman** often still works because **Settings → General → SSL certificate verification** is off, or trust differs from **Git MinGW curl + Schannel**.
 
-**GitHub Actions:** **`upload-and-install.sh`** sets **`NSP_TLS_INSECURE=1`** by default when **`GITHUB_ACTIONS`** is true and the variable is unset or empty (no extra repo secret). To verify TLS in CI, set job env **`NSP_TLS_INSECURE: "0"`** in **`deploy-nsp-lab.yml`** and use a trusted CA or **`CURL_CA_BUNDLE`**.
+**GitHub Actions:** **`upload-and-install.sh`** sets **`NSP_TLS_INSECURE=1`** by default when **`GITHUB_ACTIONS`** is true and the variable is unset or empty (no extra repo secret). To verify TLS in CI, set job env **`NSP_TLS_INSECURE: "0"`** in **`deploy-nsp-cam-bundle.yml`** and use a trusted CA or **`CURL_CA_BUNDLE`**.
 
 **Local `.env`:** set **`NSP_TLS_INSECURE=1`** for non-production labs, or import the lab issuing CA into Windows and/or set **`CURL_CA_BUNDLE`** to a PEM bundle curl accepts.
 
@@ -142,9 +142,9 @@ Implementation plan and northbound context: [`rags-nsp-docs/inno-ideas/cam-north
 
 Workflow **[`.github/workflows/build-repack-nsp-ne-backup.yml`](./.github/workflows/build-repack-nsp-ne-backup.yml)** builds on push to **`main`** or **`master`** when files change under **`source-bundle/`**, **`builder/`**, **`scripts/`**, or that workflow file; it also runs on **`pull_request`** with the same path filters and on **`workflow_dispatch`** (manual, no path filter). It uploads **`dist/*.zip`** as a workflow artifact.
 
-**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification. Optional repository **variables**: **`CAM_REST_API_VERSION`** pins the CAM install path (if unset with upload, **`upload-and-install.sh`** tries **`v3`**, **`v2`**, **`v1`**). **`SKIP_FILE_SERVICE_UPLOAD=1`** and **`BUNDLE_FILE_NAME`** skip the file-service **REST** upload when the ZIP is already on volume; then install defaults to **v3** only unless **`CAM_REST_API_VERSION`** is set.
+**[`deploy-nsp-cam-bundle.yml`](./.github/workflows/deploy-nsp-cam-bundle.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification. Optional repository **variables**: **`CAM_REST_API_VERSION`** pins the CAM install path (if unset with upload, **`upload-and-install.sh`** tries **`v3`**, **`v2`**, **`v1`**). **`SKIP_FILE_SERVICE_UPLOAD=1`** and **`BUNDLE_FILE_NAME`** skip the file-service **REST** upload when the ZIP is already on volume; then install defaults to **v3** only unless **`CAM_REST_API_VERSION`** is set.
 
-**[`uninstall-nsp-lab.yml`](./.github/workflows/uninstall-nsp-lab.yml)** is manual-only on the same **self-hosted Windows** runner model. It runs **`scripts/uninstall-bundle.sh`** with **`bundle_file_name`** from the workflow form (default **`nsp-ne-backup-1.41.0.zip`**). Same **`NSP_BASE_URL`** / **`CAM_TOKEN`** secrets. Optional **`CAM_REST_API_VERSION`** variable pins the CAM API version; otherwise the script tries **`v3`**, **`v2`**, **`v1`**. v3 uses **`POST .../artifactBundle/uninstall`**; v1/v2 use **`POST .../artifactBundle/unInstall`** (camelCase), same JSON body **`{"bundles":["<name>.zip"]}`** as batch install.
+**[`uninstall-nsp-cam-bundle.yml`](./.github/workflows/uninstall-nsp-cam-bundle.yml)** is manual-only on the same **self-hosted Windows** runner model. It runs **`scripts/uninstall-bundle.sh`** with **`bundle_file_name`** from the workflow form (default **`nsp-ne-backup-1.41.0.zip`**). Same **`NSP_BASE_URL`** / **`CAM_TOKEN`** secrets. Optional **`CAM_REST_API_VERSION`** variable pins the CAM API version; otherwise the script tries **`v3`**, **`v2`**, **`v1`**. v3 uses **`POST .../artifactBundle/uninstall`**; v1/v2 use **`POST .../artifactBundle/unInstall`** (camelCase), same JSON body **`{"bundles":["<name>.zip"]}`** as batch install.
 
 ### Build locally (same as CI)
 
@@ -172,9 +172,9 @@ gh run list --workflow=build-repack-nsp-ne-backup.yml --limit 3
 
 ### Trigger deploy to lab (upload + install)
 
-**Runner:** **`deploy-nsp-lab`** uses **`runs-on: [self-hosted, windows, x64]`** so the job runs on your **Windows x64** self-hosted agent (for example **`C-PF68KS1H`**) that can reach the lab. Register the runner under **Settings → Actions → Runners** for this repository (or the org). New Windows runners get the labels **`self-hosted`**, **`Windows`**, and **`X64`** by default; GitHub matches labels **case-insensitively**, so **`windows`** / **`x64`** in the workflow still match.
+**Runner:** **`deploy-nsp-cam-bundle`** uses **`runs-on: [self-hosted, windows, x64]`** so the job runs on your **Windows x64** self-hosted agent (for example **`C-PF68KS1H`**) that can reach the lab. Register the runner under **Settings → Actions → Runners** for this repository (or the org). New Windows runners get the labels **`self-hosted`**, **`Windows`**, and **`X64`** by default; GitHub matches labels **case-insensitively**, so **`windows`** / **`x64`** in the workflow still match.
 
-To **pin only one machine**, add a **custom label** (e.g. **`C-PF68KS1H`**) to that runner in the GitHub UI, then change **`.github/workflows/deploy-nsp-lab.yml`** to:
+To **pin only one machine**, add a **custom label** (e.g. **`C-PF68KS1H`**) to that runner in the GitHub UI, then change **`.github/workflows/deploy-nsp-cam-bundle.yml`** to:
 
 ```yaml
 runs-on: [self-hosted, C-PF68KS1H]
@@ -185,7 +185,7 @@ runs-on: [self-hosted, C-PF68KS1H]
 After repository secrets **`NSP_BASE_URL`** and **`CAM_TOKEN`** are set:
 
 ```bash
-gh workflow run deploy-nsp-lab.yml --ref master
+gh workflow run deploy-nsp-cam-bundle.yml --ref master
 ```
 
 ### Trigger uninstall on lab (CAM REST only)
@@ -199,7 +199,7 @@ export BUNDLE_FILE_NAME=nsp-ne-backup-1.41.0.zip
 From **`gh`** (override the default bundle name if needed):
 
 ```bash
-gh workflow run uninstall-nsp-lab.yml --ref master -f bundle_file_name=nsp-ne-backup-1.41.0.zip
+gh workflow run uninstall-nsp-cam-bundle.yml --ref master -f bundle_file_name=nsp-ne-backup-1.41.0.zip
 ```
 
 **Security:** Do not embed GitHub PATs or JWTs in `git remote` URLs. Use **`gh auth login`**, SSH remotes, or a credential helper, and rotate any token that was stored in plain text.

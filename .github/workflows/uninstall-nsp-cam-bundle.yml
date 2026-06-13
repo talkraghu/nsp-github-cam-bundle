@@ -1,8 +1,8 @@
 # #cursor generated code - start
-name: uninstall-nsp-lab
+name: uninstall-nsp-cam-bundle
 
 # Manual uninstall: marks bundle for uninstall via CAM REST (batch body). Same runner
-# model as deploy-nsp-lab (self-hosted Windows inside lab/VPN).
+# model as deploy-nsp-cam-bundle (self-hosted Windows inside lab/VPN).
 #
 # Set repository secrets NSP_BASE_URL and CAM_TOKEN. Set variable BUNDLE_FILE_NAME
 # (e.g. nsp-ne-backup-1.41.0.zip) before running, or pass via workflow_dispatch inputs.

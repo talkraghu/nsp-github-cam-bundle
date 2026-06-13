@@ -1,5 +1,5 @@
 # #cursor generated code - start
-name: deploy-nsp-lab
+name: deploy-nsp-cam-bundle
 
 # Manual deploy: requires secrets (see repo README). Runs on a self-hosted Windows
 # x64 runner so it can reach lab NSP (GitHub-hosted runners cannot).
