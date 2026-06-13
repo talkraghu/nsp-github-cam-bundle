@@ -1,0 +1,42 @@
+# #cursor generated code - start
+name: uninstall-nsp-lab
+
+# Manual uninstall: marks bundle for uninstall via CAM REST (batch body). Same runner
+# model as deploy-nsp-lab (self-hosted Windows inside lab/VPN).
+#
+# Set repository secrets NSP_BASE_URL and CAM_TOKEN. Set variable BUNDLE_FILE_NAME
+# (e.g. nsp-ne-backup-1.41.0.zip) before running, or pass via workflow_dispatch inputs.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_file_name:
+        description: "Bundle ZIP name on CAM/file service (e.g. nsp-ne-backup-1.41.0.zip)"
+        required: true
+        default: "nsp-ne-backup-1.41.0.zip"
+        type: string
+
+jobs:
+  uninstall-bundle:
+    runs-on: [self-hosted, windows, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Uninstall bundle via CAM REST
+        shell: pwsh
+        env:
+          NSP_BASE_URL: ${{ secrets.NSP_BASE_URL }}
+          CAM_TOKEN: ${{ secrets.CAM_TOKEN }}
+          BUNDLE_FILE_NAME: ${{ inputs.bundle_file_name }}
+          CAM_REST_API_VERSION: ${{ vars.CAM_REST_API_VERSION }}
+          UPLOAD_INSTALL_DEBUG: ${{ vars.UPLOAD_INSTALL_DEBUG }}
+        run: |
+          $bash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+          if (-not (Test-Path -LiteralPath $bash)) {
+            $bash = Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe"
+          }
+          if (-not (Test-Path -LiteralPath $bash)) {
+            throw "Git for Windows not found (expected bash.exe under Git\bin)."
+          }
+          $ws = ($env:GITHUB_WORKSPACE -replace '\\', '/')
+          & $bash -lc "set -euo pipefail; cd '$ws'; chmod +x scripts/uninstall-bundle.sh 2>/dev/null || true; ./scripts/uninstall-bundle.sh"
+# #cursor generated code - end
