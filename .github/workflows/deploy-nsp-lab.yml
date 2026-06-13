@@ -1,13 +1,21 @@
 # #cursor generated code - start
 name: deploy-nsp-lab
 
-# Manual deploy: requires secrets (see repo README).
+# Manual deploy: requires secrets (see repo README). Runs on a self-hosted Windows
+# x64 runner so it can reach lab NSP (GitHub-hosted runners cannot).
+#
+# Runner labels: this job uses [self-hosted, windows, x64]. Your machine
+# (e.g. C-PF68KS1H) must be registered with those default labels, OR add a
+# unique custom label and change runs-on below to [self-hosted, YourLabel].
 on:
   workflow_dispatch:
 
 jobs:
   upload-install:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, windows, x64]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -17,7 +25,7 @@ jobs:
 
       - name: Repack bundle
         run: |
-          chmod +x scripts/repack.sh scripts/upload-and-install.sh
+          chmod +x scripts/repack.sh scripts/upload-and-install.sh 2>/dev/null || true
           ./scripts/repack.sh
 
       - name: Upload to file service and install

@@ -94,6 +94,16 @@ gh run list --workflow=build-repack-nsp-ne-backup.yml --limit 3
 
 ### Trigger deploy to lab (upload + install)
 
+**Runner:** **`deploy-nsp-lab`** uses **`runs-on: [self-hosted, windows, x64]`** so the job runs on your **Windows x64** self-hosted agent (for example **`C-PF68KS1H`**) that can reach the lab. Register the runner under **Settings → Actions → Runners** for this repository (or the org). New Windows runners get the labels **`self-hosted`**, **`Windows`**, and **`X64`** by default; GitHub matches labels **case-insensitively**, so **`windows`** / **`x64`** in the workflow still match.
+
+To **pin only one machine**, add a **custom label** (e.g. **`C-PF68KS1H`**) to that runner in the GitHub UI, then change **`.github/workflows/deploy-nsp-lab.yml`** to:
+
+```yaml
+runs-on: [self-hosted, C-PF68KS1H]
+```
+
+**Software on the runner (Bash steps):** **Git for Windows** (provides **Git Bash** used when **`shell: bash`**), **Go 1.22+**, and **curl** on `PATH` (Windows 10+ includes **curl.exe**).
+
 After repository secrets **`NSP_BASE_URL`** and **`CAM_TOKEN`** are set:
 
 ```bash
