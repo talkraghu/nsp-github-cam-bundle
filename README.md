@@ -46,6 +46,8 @@ Environment overrides:
 
 [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) automatically **`source`s** **`.env`** from the repo root when the file exists.
 
+**Debug logging:** set **`UPLOAD_INSTALL_DEBUG=1`** or **`DEBUG=1`** in **`.env`** (or enable **Actions** re-run with debug logging so **`ACTIONS_STEP_DEBUG=true`**). Logs go to **stderr** with prefix **`[upload-and-install]`**; extra lines use **`[upload-and-install][debug]`**. **`CAM_TOKEN`** is never printed. In GitHub, set repository **Variable** **`UPLOAD_INSTALL_DEBUG`** to **`1`** (optional; wired in **`deploy-nsp-lab.yml`**).
+
 **CAM vs file service:** bundle **upload** uses the **file service** REST API (still **`/nsp-file-service-app/rest/api/v1/file/uploadFile`** in typical NSP installs). **Install** is a **CAM** call; this repo defaults to **v3** batch install: **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/v3/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`** (see [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md)). Override with **`CAM_REST_API_VERSION=v1`** or **`v2`** if your cluster does not expose v3 yet.
 
 **GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml).
@@ -54,7 +56,9 @@ Environment overrides:
 
 If a token was ever pasted into a ticket, chat, or a tracked file, **rotate** it in your IdP and update **`.env`** / secrets.
 
-Optional: **`BUNDLE_ZIP`**, **`FS_UPLOAD_PATH`**, **`CAM_BASE_PATH`**, **`BUNDLE_FILE_NAME`** (see script header).
+Optional: **`BUNDLE_ZIP`**, **`FS_UPLOAD_PATH`**, **`CAM_BASE_PATH`**, **`BUNDLE_FILE_NAME`**, **`CURL_*`** (see script header).
+
+**Windows / lab TLS:** If upload fails with **`curl: (26) Failed to open/read local data`** the job was probably using **Windows `curl.exe`** with an MSYS **`/c/...`** file path. The script now prepends **Git `usr/bin`** so **MSYS curl** runs (same as typical Git Bash). If install fails with **`SEC_E_UNTRUSTED_ROOT`** or OpenSSL verify errors, import your lab CA into the trust store, set **`CURL_CA_BUNDLE`** to a PEM bundle, or for **non-production only** set **`NSP_TLS_INSECURE=1`** in **`.env`** or add repository secret **`NSP_TLS_INSECURE`** with value **`1`** (wired in **`deploy-nsp-lab.yml`**).
 
 Upload uses the same pattern as the CAM UI: **`POST .../nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true`** with multipart **`file`**.
 
@@ -66,7 +70,7 @@ Implementation plan and northbound context: [`rags-nsp-docs/inno-ideas/cam-north
 
 Workflow **[`.github/workflows/build-repack-nsp-ne-backup.yml`](./.github/workflows/build-repack-nsp-ne-backup.yml)** builds on push to **`main`** or **`master`** when files change under **`source-bundle/`**, **`builder/`**, **`scripts/`**, or that workflow file; it also runs on **`pull_request`** with the same path filters and on **`workflow_dispatch`** (manual, no path filter). It uploads **`dist/*.zip`** as a workflow artifact.
 
-**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**.
+**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. Optional: **`NSP_TLS_INSECURE`** = **`1`** so curl skips TLS verification for private lab CAs (non-production only).
 
 ### Build locally (same as CI)
 

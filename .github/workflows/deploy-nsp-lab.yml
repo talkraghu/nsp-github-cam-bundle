@@ -41,6 +41,10 @@ jobs:
         env:
           NSP_BASE_URL: ${{ secrets.NSP_BASE_URL }}
           CAM_TOKEN: ${{ secrets.CAM_TOKEN }}
+          # Optional: create repo secret NSP_TLS_INSECURE = 1 for lab TLS (curl --insecure).
+          NSP_TLS_INSECURE: ${{ secrets.NSP_TLS_INSECURE }}
+          # Optional: set to 1 for extra stderr logs from upload-and-install.sh
+          UPLOAD_INSTALL_DEBUG: ${{ vars.UPLOAD_INSTALL_DEBUG }}
         run: |
           $bash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
           if (-not (Test-Path -LiteralPath $bash)) {
