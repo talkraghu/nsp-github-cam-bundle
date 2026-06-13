@@ -12,10 +12,16 @@ This repo is scoped to the **`cam-lso-deployer-app`** pilot: bundle name **`nsp-
 | [`source-bundle/`](./source-bundle/) | Input directory: `metadata.json` + `content/` (builder input shape; no `artifact-content` in metadata). |
 | [`scripts/repack.sh`](./scripts/repack.sh) | `go build` + run builder; writes **`dist/*.zip`**. Default **`-unsigned`**. |
 | [`scripts/extract-reference-zip.sh`](./scripts/extract-reference-zip.sh) | Unzip a reference **`nsp-ne-backup-1.41.0.zip`** into `source-bundle/` (then run [`strip-artifact-content.py`](./scripts/strip-artifact-content.py) if metadata still lists digests). |
-| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload to file service + `POST /cam/rest/api/v1/artifactBundle/install` with JSON `{"bundles":["<zip-basename>"]}`. |
+| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload to file service + `POST /cam/rest/api/v3/artifactBundle/install` (default) with JSON `{"bundles":["<zip-basename>"]}`. |
 | [`postman/cam-v3.json`](./postman/cam-v3.json) | OpenAPI export for CAM (v1 or v2 or v3 paths); align **`servers[0].url`** with your lab. |
 | [`reference/`](./reference/README.md) | Optional place for **`nsp-ne-backup-1.41.0.zip`**; see README for compliance notes. |
 | [`.env.example`](./.env.example) | Template for **`NSP_BASE_URL`** / **`CAM_TOKEN`**; copy to **`.env`** (gitignored). |
+
+## Why file service before CAM install?
+
+**CAM batch install does not accept the ZIP in the HTTP body.** It only accepts JSON listing bundle **file names** (for example `nsp-ne-backup-1.41.0.zip`). For each name, CAM resolves the object on the **NSP file service** under **`/nokia/nsp/cam/artifacts/bundle/`**, verifies it (checksum), then extracts and reconciles. See **`cam-server-app`** [`ArtifactBundleRestService.java`](../cam-server-app/src/main/java/com/nokia/nsp/cam/rest/service/ArtifactBundleRestService.java) (`fileService.getCheckSumWithResult` on **`Constants.ARTIFACT_BASE_PATH + "/" + artifactBundleName`** before install).
+
+Automation must **upload the ZIP to the file service bundle directory first**, then call CAM install. Same pattern as the CAM UI and [`cam-tools`](../cam-tools/src/processer.py). Bundle paths and behavior: [`ARTIFACTS_AND_BUNDLES.md`](../rags-nsp-docs/cam-docs/ARTIFACTS_AND_BUNDLES.md).
 
 ## Local build
 
@@ -48,7 +54,7 @@ Environment overrides:
 
 **Debug logging:** set **`UPLOAD_INSTALL_DEBUG=1`** or **`DEBUG=1`** in **`.env`** (or enable **Actions** re-run with debug logging so **`ACTIONS_STEP_DEBUG=true`**). Logs go to **stderr** with prefix **`[upload-and-install]`**; extra lines use **`[upload-and-install][debug]`**. **`CAM_TOKEN`** is never printed. In GitHub, set repository **Variable** **`UPLOAD_INSTALL_DEBUG`** to **`1`** (optional; wired in **`deploy-nsp-lab.yml`**).
 
-**CAM vs file service:** bundle **upload** uses the **file service** REST API (still **`/nsp-file-service-app/rest/api/v1/file/uploadFile`** in typical NSP installs). **Install** is a **CAM** call; this repo defaults to **v3** batch install: **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/v3/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`** (see [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md)). Override with **`CAM_REST_API_VERSION=v1`** or **`v2`** if your cluster does not expose v3 yet.
+**CAM vs file service:** bundle **upload** uses the **file service** REST API (**`/nsp-file-service-app/rest/api/v1/file/uploadFile`**) because **install only references names**; CAM reads the ZIP from that path (see **Why file service before CAM install?**). **Install** defaults to **v3**: **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/v3/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`** ([ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md)). Override with **`CAM_REST_API_VERSION=v1`** or **`v2`** if needed.
 
 **GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml).
 
@@ -58,7 +64,7 @@ If a token was ever pasted into a ticket, chat, or a tracked file, **rotate** it
 
 Optional: **`BUNDLE_ZIP`**, **`FS_UPLOAD_PATH`**, **`CAM_BASE_PATH`**, **`BUNDLE_FILE_NAME`**, **`CURL_*`** (see script header).
 
-**Windows / lab TLS:** If upload fails with **`curl: (26) Failed to open/read local data`** the job was probably using **Windows `curl.exe`** with an MSYS **`/c/...`** file path. The script now prepends **Git `usr/bin`** so **MSYS curl** runs (same as typical Git Bash). If install fails with **`SEC_E_UNTRUSTED_ROOT`** or OpenSSL verify errors, import your lab CA into the trust store, set **`CURL_CA_BUNDLE`** to a PEM bundle, or for **non-production only** set **`NSP_TLS_INSECURE=1`** in **`.env`** or add repository secret **`NSP_TLS_INSECURE`** with value **`1`** (wired in **`deploy-nsp-lab.yml`**).
+**Windows / lab TLS:** Git **`mingw64/bin/curl.exe`** (common when **`usr/bin/curl.exe`** is absent) still uses **Schannel**; use a trusted lab CA, **`CURL_CA_BUNDLE`**, or **`NSP_TLS_INSECURE=1`** (non-production). For **`curl: (26) Failed to open/read local data`** on multipart upload, the script uses **`cygpath -w`** for the **`file=@...`** path when **`cygpath`** is available so MinGW/Schannel curl can open the ZIP.
 
 Upload uses the same pattern as the CAM UI: **`POST .../nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true`** with multipart **`file`**.
 

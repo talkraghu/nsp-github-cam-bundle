@@ -25,25 +25,27 @@ if [[ -f "${ROOT}/.env" ]]; then
   _dbg "sourced ${ROOT}/.env"
 fi
 
-# Git Bash on Windows: use Git's MSYS curl so -F file=@/c/... works. Windows
-# System32 curl.exe uses Schannel and often fails (26) on MSYS paths and (60)
-# on private lab CAs unless the CA is in the Windows trust store.
+# Git Bash on Windows: prefer Git-bundled curl (usr/bin or mingw64/bin). Plain
+# Windows System32 curl.exe uses Schannel and often fails (26) on MSYS paths for
+# multipart file= and (60) on private lab CAs unless trusted.
 _us="$(uname -s 2>/dev/null || true)"
 CURL_EXE=curl
 if [[ "${_us}" == MINGW* || "${_us}" == MSYS* || "${_us}" == CYGWIN* || "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
   for _curl_dir in \
     "/c/Program Files/Git/usr/bin" \
-    "/c/Program Files (x86)/Git/usr/bin"; do
+    "/c/Program Files (x86)/Git/usr/bin" \
+    "/c/Program Files/Git/mingw64/bin" \
+    "/c/Program Files (x86)/Git/mingw64/bin"; do
     if [[ -x "${_curl_dir}/curl.exe" ]]; then
       CURL_EXE="${_curl_dir}/curl.exe"
       PATH="${_curl_dir}:${PATH}"
       export PATH
-      _log "selected MSYS curl: ${CURL_EXE}"
+      _log "selected Git curl: ${CURL_EXE}"
       break
     fi
   done
   if [[ "${CURL_EXE}" == "curl" ]]; then
-    _log "NOTE: Git usr/bin curl.exe not found under Program Files; using PATH curl (may be Windows curl.exe)"
+    _log "NOTE: Git curl.exe not found under usr/bin or mingw64/bin; using PATH curl"
   fi
 fi
 
@@ -74,6 +76,7 @@ _dbg "PATH(first entries)=$(echo "${PATH}" | tr ':' '\n' | head -10)"
 #   NSP_TLS_INSECURE        set to 1 for curl --insecure (lab only; private CA)
 #   CURL_CA_BUNDLE          PEM path for curl --cacert (corporate CA)
 #   UPLOAD_INSTALL_DEBUG    set to 1 (or DEBUG=1) for extra stderr logs (never logs CAM_TOKEN)
+#   Windows: multipart file=@ uses cygpath -w when cygpath exists (MinGW curl + /c/...)
 
 NSP_BASE_URL="${NSP_BASE_URL:?Set NSP_BASE_URL in .env or environment (e.g. https://lab-ip)}"
 CAM_TOKEN="${CAM_TOKEN:?Set CAM_TOKEN in .env or environment (JWT without Bearer prefix)}"
@@ -117,13 +120,26 @@ BODY=$(printf '{"bundles":["%s"]}' "${NAME}")
 _log "install URL: ${INSTALL_URL}"
 _log "install JSON body: ${BODY}"
 
+# MinGW / Schannel curl needs a Windows path for multipart file=@... (curl 26 on /c/...).
+ZIP_UPLOAD="${ZIP}"
+if command -v cygpath >/dev/null 2>&1; then
+  if [[ "${_us}" == MINGW* || "${_us}" == MSYS* || "${OSTYPE:-}" == msys* ]]; then
+    _zipw="$(cygpath -w "${ZIP}" 2>/dev/null || true)"
+    if [[ -n "${_zipw}" ]]; then
+      ZIP_UPLOAD="${_zipw}"
+      _log "multipart upload file path (cygpath -w): ${ZIP_UPLOAD}"
+      _dbg "original ZIP path: ${ZIP}"
+    fi
+  fi
+fi
+
 _log "uploading file as NAME=${NAME} (response body snippet up to 400 chars on stdout)"
 _log "POST ${UPLOAD_URL}"
 set +o pipefail
 set +e
 "${CURL_EXE}" "${CURL_OPTS[@]}" -X POST "${UPLOAD_URL}" \
   -H "Authorization: Bearer ${CAM_TOKEN}" \
-  -F "file=@${ZIP};filename=${NAME}" \
+  -F "file=@${ZIP_UPLOAD};filename=${NAME}" \
   -F "dirName=/nokia/nsp/cam/artifacts/bundle" \
   -F "overwrite=true" \
   | head -c 400 || true
