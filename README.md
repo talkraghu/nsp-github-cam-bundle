@@ -46,7 +46,11 @@ Environment overrides:
 
 [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) automatically **`source`s** **`.env`** from the repo root when the file exists.
 
+**CAM vs file service:** bundle **upload** uses the **file service** REST API (still **`/nsp-file-service-app/rest/api/v1/file/uploadFile`** in typical NSP installs). **Install** is a **CAM** call; this repo defaults to **v3** batch install: **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/v3/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`** (see [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md)). Override with **`CAM_REST_API_VERSION=v1`** or **`v2`** if your cluster does not expose v3 yet.
+
 **GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml).
+
+**Network:** **`deploy-nsp-lab`** on **GitHub-hosted** `ubuntu-latest` cannot open **`https://100.120.x.x`** inside your lab (runners are on the public internet). You will see **`curl: (28) Failed to connect`**. Use a **self-hosted** runner inside the lab/VPN, or run **`./scripts/upload-and-install.sh`** from a host that can reach NSP, or only use Actions for **`build-repack-nsp-ne-backup`** (artifact) and deploy manually.
 
 If a token was ever pasted into a ticket, chat, or a tracked file, **rotate** it in your IdP and update **`.env`** / secrets.
 
