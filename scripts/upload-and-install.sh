@@ -80,7 +80,7 @@ _dbg "PATH(first entries)=$(echo "${PATH}" | tr ':' '\n' | head -10)"
 #   BUNDLE_ZIP              path to zip (default: dist/nsp-ne-backup-*.zip first match)
 #   FS_UPLOAD_PATH          default /nsp-file-service-app/rest/api/v1/file/uploadFile (file service is not versioned under CAM v3)
 #   CAM_BASE_PATH           default /cam
-#   CAM_REST_API_VERSION    default v2 (batch install in this repo). Use v3 if your NSP gateway exposes it.
+#   CAM_REST_API_VERSION    if set, install uses only this (e.g. v2). If unset, install tries v3 then v2 then v1.
 #   BUNDLE_FILE_NAME        override zip basename on server (default: basename of BUNDLE_ZIP)
 #   CURL_CONNECT_TIMEOUT    seconds (default 30)
 #   CURL_MAX_TIME           seconds for whole transfer (default 600)
@@ -93,8 +93,11 @@ NSP_BASE_URL="${NSP_BASE_URL:?Set NSP_BASE_URL in .env or environment (e.g. http
 CAM_TOKEN="${CAM_TOKEN:?Set CAM_TOKEN in .env or environment (JWT without Bearer prefix)}"
 FS_UPLOAD_PATH="${FS_UPLOAD_PATH:-/nsp-file-service-app/rest/api/v1/file/uploadFile}"
 CAM_BASE_PATH="${CAM_BASE_PATH:-/cam}"
-# v2 matches controllers in cam-server-app (this repo); some NSP trains expose v3 on the gateway only.
-CAM_REST_API_VERSION="${CAM_REST_API_VERSION:-v2}"
+if [[ -n "${CAM_REST_API_VERSION:-}" ]]; then
+  _install_versions=("${CAM_REST_API_VERSION}")
+else
+  _install_versions=(v3 v2 v1)
+fi
 CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-30}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-600}"
 if [[ -n "${BUNDLE_ZIP:-}" ]]; then
@@ -114,7 +117,7 @@ NAME="${BUNDLE_FILE_NAME:-$(basename "${ZIP}")}"
 UPLOAD_URL="${NSP_BASE_URL}${FS_UPLOAD_PATH}?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true"
 
 _log "config: NSP_BASE_URL=${NSP_BASE_URL}"
-_log "config: CAM_BASE_PATH=${CAM_BASE_PATH} FS_UPLOAD_PATH=${FS_UPLOAD_PATH} CAM_REST_API_VERSION=${CAM_REST_API_VERSION}"
+_log "config: CAM_BASE_PATH=${CAM_BASE_PATH} FS_UPLOAD_PATH=${FS_UPLOAD_PATH} CAM_REST_API_VERSION=${CAM_REST_API_VERSION:-<auto: v3 v2 v1>}"
 _log "config: CURL_CONNECT_TIMEOUT=${CURL_CONNECT_TIMEOUT}s CURL_MAX_TIME=${CURL_MAX_TIME}s"
 _log "config: NSP_TLS_INSECURE=${NSP_TLS_INSECURE:-<unset>} CURL_CA_BUNDLE=${CURL_CA_BUNDLE:-<unset>}"
 _log "auth: CAM_TOKEN length=${#CAM_TOKEN} characters (value not logged)"
@@ -128,9 +131,7 @@ if [[ -n "${CURL_CA_BUNDLE:-}" ]]; then
 fi
 _dbg "CURL_OPTS count=${#CURL_OPTS[@]} args: ${CURL_OPTS[*]}"
 
-INSTALL_URL="${NSP_BASE_URL}${CAM_BASE_PATH}/rest/api/${CAM_REST_API_VERSION}/artifactBundle/install"
 BODY=$(printf '{"bundles":["%s"]}' "${NAME}")
-_log "install URL: ${INSTALL_URL}"
 _log "install JSON body: ${BODY}"
 
 # MinGW / Schannel curl needs a Windows path for multipart file=@... (curl 26 on /c/...).
@@ -163,16 +164,24 @@ _log "upload curl pipe: curl_exit=${_up_stat[0]:-?} head_exit=${_up_stat[1]:-?}"
 
 echo
 
-_log "POST install (expect HTTP 2xx; body on stdout)"
-set +e
-"${CURL_EXE}" "${CURL_OPTS[@]}" -X POST "${INSTALL_URL}" \
-  -H "Authorization: Bearer ${CAM_TOKEN}" \
-  -H "Accept: application/json, application/problem+json" \
-  -H "Content-Type: application/json" \
-  -d "${BODY}"
-_in_ec=$?
-set -e
-_log "install curl exit=${_in_ec}"
+_log "POST install (expect HTTP 2xx from one of: ${_install_versions[*]}; body on stdout)"
+_in_ec=1
+for _ver in "${_install_versions[@]}"; do
+  INSTALL_URL="${NSP_BASE_URL}${CAM_BASE_PATH}/rest/api/${_ver}/artifactBundle/install"
+  _log "install try REST ${_ver}: ${INSTALL_URL}"
+  set +e
+  "${CURL_EXE}" "${CURL_OPTS[@]}" -X POST "${INSTALL_URL}" \
+    -H "Authorization: Bearer ${CAM_TOKEN}" \
+    -H "Accept: application/json, application/problem+json" \
+    -H "Content-Type: application/json" \
+    -d "${BODY}"
+  _in_ec=$?
+  set -e
+  _log "install ${_ver} curl exit=${_in_ec}"
+  if [[ "${_in_ec}" -eq 0 ]]; then
+    break
+  fi
+done
 [[ "${_in_ec}" -eq 0 ]]
 echo
 _log "finished OK"

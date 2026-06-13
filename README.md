@@ -12,7 +12,7 @@ This repo is scoped to the **`cam-lso-deployer-app`** pilot: bundle name **`nsp-
 | [`source-bundle/`](./source-bundle/) | Input directory: `metadata.json` + `content/` (builder input shape; no `artifact-content` in metadata). |
 | [`scripts/repack.sh`](./scripts/repack.sh) | `go build` + run builder; writes **`dist/*.zip`**. Default **`-unsigned`**. |
 | [`scripts/extract-reference-zip.sh`](./scripts/extract-reference-zip.sh) | Unzip a reference **`nsp-ne-backup-1.41.0.zip`** into `source-bundle/` (then run [`strip-artifact-content.py`](./scripts/strip-artifact-content.py) if metadata still lists digests). |
-| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload to file service (`createDirectory=true`) + `POST /cam/rest/api/v2/artifactBundle/install` (default) with JSON `{"bundles":["<zip-basename>"]}`. Set **`CAM_REST_API_VERSION=v3`** when your NSP gateway exposes v3. |
+| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload (`createDirectory=true`) + batch **install**: tries **`v3`**, then **`v2`**, then **`v1`** when **`CAM_REST_API_VERSION`** is unset; set that variable to pin one version. |
 | [`postman/cam-v3.json`](./postman/cam-v3.json) | OpenAPI export for CAM (v1 or v2 or v3 paths); align **`servers[0].url`** with your lab. |
 | [`reference/`](./reference/README.md) | Optional place for **`nsp-ne-backup-1.41.0.zip`**; see README for compliance notes. |
 | [`.env.example`](./.env.example) | Template for **`NSP_BASE_URL`** / **`CAM_TOKEN`**; copy to **`.env`** (gitignored). |
@@ -54,7 +54,7 @@ Environment overrides:
 
 **Debug logging:** set **`UPLOAD_INSTALL_DEBUG=1`** or **`DEBUG=1`** in **`.env`** (or enable **Actions** re-run with debug logging so **`ACTIONS_STEP_DEBUG=true`**). Logs go to **stderr** with prefix **`[upload-and-install]`**; extra lines use **`[upload-and-install][debug]`**. **`CAM_TOKEN`** is never printed. In GitHub, set repository **Variable** **`UPLOAD_INSTALL_DEBUG`** to **`1`** (optional; wired in **`deploy-nsp-lab.yml`**).
 
-**CAM vs file service:** bundle **upload** uses the **file service** REST API (**`/nsp-file-service-app/rest/api/v1/file/uploadFile`**) with **`createDirectory=true`** so **`/nokia/nsp/cam/artifacts/bundle`** is created if missing (otherwise the API returns **HTTP 404**). **Install** defaults to **v2**: **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/v2/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`** (same batch shape as v1/v3; see [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md)). Set **`CAM_REST_API_VERSION=v3`** when your cluster exposes v3 on the gateway.
+**CAM vs file service:** bundle **upload** uses the **file service** REST API (**`/nsp-file-service-app/rest/api/v1/file/uploadFile`**) with **`createDirectory=true`** so **`/nokia/nsp/cam/artifacts/bundle`** is created if missing (otherwise the API returns **HTTP 404**). **Install** calls **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/<v>/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`**. If **`CAM_REST_API_VERSION`** is **unset**, the script tries **`<v>` = `v3`**, then **`v2`**, then **`v1`** (gateways often expose only one). Set **`CAM_REST_API_VERSION`** to use a single version. See [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md).
 
 **GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml).
 
@@ -68,7 +68,7 @@ Optional: **`BUNDLE_ZIP`**, **`FS_UPLOAD_PATH`**, **`CAM_BASE_PATH`**, **`BUNDLE
 
 Upload uses the same pattern as the CAM UI: **`POST .../nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true`** with multipart **`file`**.
 
-**Troubleshooting `curl: (22)` / HTTP 404 on upload:** the file service returns **404** when **`dirName`** does not exist and **`createDirectory`** is not true; the script always sends **`createDirectory=true`**. **404 on install** immediately after a failed upload usually means the ZIP never reached the file service. If **upload succeeds** but **install** is still **404**, switch **`CAM_REST_API_VERSION`** between **`v2`** (script default) and **`v3`** to match your NSP REST gateway.
+**Troubleshooting `curl: (22)` / HTTP 404 on upload:** the file service returns **404** when **`dirName`** does not exist and **`createDirectory`** is not true; the script always sends **`createDirectory=true`**. **404 on install** immediately after a failed upload usually means the ZIP never reached the file service. If **upload succeeds** but **install** returns **404**, the REST gateway may not expose that API version; leave **`CAM_REST_API_VERSION`** unset so the script tries **`v3`**, **`v2`**, then **`v1`**, or set the version your NSP exposes.
 
 ### Windows: manual curl when you see `curl: (60)` (Schannel)
 
@@ -110,7 +110,7 @@ Implementation plan and northbound context: [`rags-nsp-docs/inno-ideas/cam-north
 
 Workflow **[`.github/workflows/build-repack-nsp-ne-backup.yml`](./.github/workflows/build-repack-nsp-ne-backup.yml)** builds on push to **`main`** or **`master`** when files change under **`source-bundle/`**, **`builder/`**, **`scripts/`**, or that workflow file; it also runs on **`pull_request`** with the same path filters and on **`workflow_dispatch`** (manual, no path filter). It uploads **`dist/*.zip`** as a workflow artifact.
 
-**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification.
+**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification. Optional repository **variable** **`CAM_REST_API_VERSION`** pins the CAM install path; if unset, **`upload-and-install.sh`** tries **`v3`**, **`v2`**, then **`v1`**.
 
 ### Build locally (same as CI)
 
