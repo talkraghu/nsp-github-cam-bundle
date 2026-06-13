@@ -12,7 +12,7 @@ This repo is scoped to the **`cam-lso-deployer-app`** pilot: bundle name **`nsp-
 | [`source-bundle/`](./source-bundle/) | Input directory: `metadata.json` + `content/` (builder input shape; no `artifact-content` in metadata). |
 | [`scripts/repack.sh`](./scripts/repack.sh) | `go build` + run builder; writes **`dist/*.zip`**. Default **`-unsigned`**. |
 | [`scripts/extract-reference-zip.sh`](./scripts/extract-reference-zip.sh) | Unzip a reference **`nsp-ne-backup-1.41.0.zip`** into `source-bundle/` (then run [`strip-artifact-content.py`](./scripts/strip-artifact-content.py) if metadata still lists digests). |
-| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload (`createDirectory=true`) + batch **install**: tries **`v3`**, then **`v2`**, then **`v1`** when **`CAM_REST_API_VERSION`** is unset; set that variable to pin one version. |
+| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload (`createDirectory=true`) unless **`SKIP_FILE_SERVICE_UPLOAD=1`**, then **`POST /cam/rest/api/<v>/artifactBundle/install`** (auto **`v3`/`v2`/`v1`** or **`v3`** only when skipping upload). |
 | [`postman/cam-v3.json`](./postman/cam-v3.json) | OpenAPI export for CAM (v1 or v2 or v3 paths); align **`servers[0].url`** with your lab. |
 | [`reference/`](./reference/README.md) | Optional place for **`nsp-ne-backup-1.41.0.zip`**; see README for compliance notes. |
 | [`.env.example`](./.env.example) | Template for **`NSP_BASE_URL`** / **`CAM_TOKEN`**; copy to **`.env`** (gitignored). |
@@ -55,6 +55,8 @@ Environment overrides:
 **Debug logging:** set **`UPLOAD_INSTALL_DEBUG=1`** or **`DEBUG=1`** in **`.env`** (or enable **Actions** re-run with debug logging so **`ACTIONS_STEP_DEBUG=true`**). Logs go to **stderr** with prefix **`[upload-and-install]`**; extra lines use **`[upload-and-install][debug]`**. **`CAM_TOKEN`** is never printed. In GitHub, set repository **Variable** **`UPLOAD_INSTALL_DEBUG`** to **`1`** (optional; wired in **`deploy-nsp-lab.yml`**).
 
 **CAM vs file service:** bundle **upload** uses the **file service** REST API (**`/nsp-file-service-app/rest/api/v1/file/uploadFile`**) with **`createDirectory=true`** so **`/nokia/nsp/cam/artifacts/bundle`** is created if missing (otherwise the API returns **HTTP 404**). **Install** calls **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/<v>/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`**. If **`CAM_REST_API_VERSION`** is **unset**, the script tries **`<v>` = `v3`**, then **`v2`**, then **`v1`** (gateways often expose only one). Set **`CAM_REST_API_VERSION`** to use a single version. See [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md).
+
+**Install only (no upload API):** if you copied **`*.zip`** into **`.../nokia/nsp/cam/artifacts/bundle/`** on the file-service volume (same path CAM uses), set **`SKIP_FILE_SERVICE_UPLOAD=1`** and **`BUNDLE_FILE_NAME=nsp-ne-backup-1.41.0.zip`** (or keep a local **`dist/*.zip`** so the script can take the basename). Install then defaults to **v3 only** unless **`CAM_REST_API_VERSION`** is set.
 
 **GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml).
 
@@ -102,6 +104,33 @@ $zip = "C:\Users\you\Downloads\nsp-ne-backup-1.41.0.zip"
 
 Postman **Code** exports sometimes emit **`--form '=@C:/...'`** (missing the field name). For this API the part name must be **`file`**, as in **`-F "file=@C:/path/to.zip"`**.
 
+### Postman (or any REST client): `uploadFile` checklist
+
+The **`nsp-file-service-app`** handler expects **`POST /nsp-file-service-app/rest/api/v1/file/uploadFile`** with **multipart** data (see **`FileController.uploadFile`** in **`nsp-file-service-app`** in this workspace).
+
+1. **Method and URL**  
+   **`POST https://<lab-ip>/nsp-file-service-app/rest/api/v1/file/uploadFile`**  
+   Query string (recommended): **`dirName=/demo1`** (or your target folder), **`overwrite=true`**, and **`createDirectory=true`** if that folder might not exist yet. Without **`createDirectory=true`**, a missing **`dirName`** yields **HTTP 404** (`DIR_NOT_EXIST`).
+
+2. **Authorization**  
+   **`Authorization: Bearer <JWT>`** with a token that has **WRITE** on the File Server UI app (**`nspui-file-server`** in code). If UAC denies write, the API returns **HTTP 403** with an **empty** body in some paths. Use the same class of **admin / system** token you use for CAM (for example **SystemAdmin** on **NSP**), not a minimal-scope client unless your IdP maps it to file-server **WRITE**.
+
+3. **Body type**  
+   **`body` → `form-data`** (multipart). Do **not** set **`Content-Type`** yourself to **`application/json`**. Let Postman set **`multipart/form-data`** and the boundary.
+
+4. **Multipart keys**  
+   - **`file`**: type **File**, pick a file (required part name is exactly **`file`**).  
+   - You can put **`dirName`**, **`overwrite`**, **`createDirectory`** in the **query string** only, or repeat them as **form-data** text fields (Spring binds **`@RequestParam`** from either).
+
+5. **TLS**  
+   If Postman fails SSL but the browser works: **Settings → General → SSL certificate verification** (lab only), or import your lab CA.
+
+6. **ZIP uploads**  
+   **`.zip`** files are scanned for disallowed inner extensions; a bad archive can fail with **400** / validation errors even when non-zip uploads work.
+
+7. **Compare with a working call**  
+   Open browser **DevTools → Network** on **File Server** upload, then mirror **URL**, **method**, **query params**, and **`file`** part name in Postman.
+
 ## Documentation
 
 Implementation plan and northbound context: [`rags-nsp-docs/inno-ideas/cam-northbound/cam-northbound-github-integration-implementation-plan.md`](../rags-nsp-docs/inno-ideas/cam-northbound/cam-northbound-github-integration-implementation-plan.md).
@@ -110,7 +139,7 @@ Implementation plan and northbound context: [`rags-nsp-docs/inno-ideas/cam-north
 
 Workflow **[`.github/workflows/build-repack-nsp-ne-backup.yml`](./.github/workflows/build-repack-nsp-ne-backup.yml)** builds on push to **`main`** or **`master`** when files change under **`source-bundle/`**, **`builder/`**, **`scripts/`**, or that workflow file; it also runs on **`pull_request`** with the same path filters and on **`workflow_dispatch`** (manual, no path filter). It uploads **`dist/*.zip`** as a workflow artifact.
 
-**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification. Optional repository **variable** **`CAM_REST_API_VERSION`** pins the CAM install path; if unset, **`upload-and-install.sh`** tries **`v3`**, **`v2`**, then **`v1`**.
+**[`deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification. Optional repository **variables**: **`CAM_REST_API_VERSION`** pins the CAM install path (if unset with upload, **`upload-and-install.sh`** tries **`v3`**, **`v2`**, **`v1`**). **`SKIP_FILE_SERVICE_UPLOAD=1`** and **`BUNDLE_FILE_NAME`** skip the file-service **REST** upload when the ZIP is already on volume; then install defaults to **v3** only unless **`CAM_REST_API_VERSION`** is set.
 
 ### Build locally (same as CI)
 

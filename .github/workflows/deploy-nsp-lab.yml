@@ -43,7 +43,11 @@ jobs:
           CAM_TOKEN: ${{ secrets.CAM_TOKEN }}
           # NSP_TLS_INSECURE: optional. If unset, upload-and-install.sh defaults to 1 under GITHUB_ACTIONS (lab TLS).
           # Set NSP_TLS_INSECURE: "0" here to enforce certificate verification.
-          # Optional: repository variable CAM_REST_API_VERSION (e.g. v3) pins install path; if unset, script tries v3, v2, v1.
+          # Optional: set to 1 if the bundle ZIP is already on file-service volume (no REST upload).
+          SKIP_FILE_SERVICE_UPLOAD: ${{ vars.SKIP_FILE_SERVICE_UPLOAD }}
+          # Optional: bundle filename on server when skipping upload (e.g. nsp-ne-backup-1.41.0.zip).
+          BUNDLE_FILE_NAME: ${{ vars.BUNDLE_FILE_NAME }}
+          # Optional: CAM_REST_API_VERSION (e.g. v3) pins install; if unset, script tries v3,v2,v1 with upload, v3 only when SKIP_FILE_SERVICE_UPLOAD=1.
           CAM_REST_API_VERSION: ${{ vars.CAM_REST_API_VERSION }}
           # Optional: set to 1 for extra stderr logs from upload-and-install.sh
           UPLOAD_INSTALL_DEBUG: ${{ vars.UPLOAD_INSTALL_DEBUG }}

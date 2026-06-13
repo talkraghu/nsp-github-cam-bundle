@@ -70,18 +70,24 @@ else
 fi
 _dbg "PATH(first entries)=$(echo "${PATH}" | tr ':' '\n' | head -10)"
 
-# Upload a bundle ZIP to NSP file service (CAM bundle dir) then request CAM install.
+# Upload a bundle ZIP to NSP file service (CAM bundle dir), or skip upload if the ZIP
+# is already on cluster storage, then request CAM batch install.
 #
 # Required env (export them, or put them in repo-root .env -- file is gitignored):
 #   NSP_BASE_URL       e.g. https://100.120.90.89
 #   CAM_TOKEN          Bearer token value (without "Bearer " prefix)
 #
 # Optional:
-#   BUNDLE_ZIP              path to zip (default: dist/nsp-ne-backup-*.zip first match)
-#   FS_UPLOAD_PATH          default /nsp-file-service-app/rest/api/v1/file/uploadFile (file service is not versioned under CAM v3)
+#   SKIP_FILE_SERVICE_UPLOAD  set to 1 to skip REST upload (bundle must already exist under
+#                             /nokia/nsp/cam/artifacts/bundle/ on file-service storage). Then set
+#                             BUNDLE_FILE_NAME or keep a local zip for naming only. Install defaults to v3 only
+#                             unless CAM_REST_API_VERSION is set.
+#   BUNDLE_ZIP              path to zip (default: dist/nsp-ne-backup-*.zip first match); not required when
+#                             SKIP_FILE_SERVICE_UPLOAD=1 if BUNDLE_FILE_NAME is set
+#   FS_UPLOAD_PATH          default /nsp-file-service-app/rest/api/v1/file/uploadFile (ignored when skip upload)
 #   CAM_BASE_PATH           default /cam
-#   CAM_REST_API_VERSION    if set, install uses only this (e.g. v2). If unset, install tries v3 then v2 then v1.
-#   BUNDLE_FILE_NAME        override zip basename on server (default: basename of BUNDLE_ZIP)
+#   CAM_REST_API_VERSION    if set, install uses only this (e.g. v2). If unset and skip upload, v3 only; else v3 v2 v1.
+#   BUNDLE_FILE_NAME        server bundle zip name (e.g. nsp-ne-backup-1.41.0.zip) when no local zip
 #   CURL_CONNECT_TIMEOUT    seconds (default 30)
 #   CURL_MAX_TIME           seconds for whole transfer (default 600)
 #   NSP_TLS_INSECURE        1 = curl --insecure (lab). On GitHub Actions, defaults to 1 if unset/empty. Use 0 to verify TLS.
@@ -95,29 +101,53 @@ FS_UPLOAD_PATH="${FS_UPLOAD_PATH:-/nsp-file-service-app/rest/api/v1/file/uploadF
 CAM_BASE_PATH="${CAM_BASE_PATH:-/cam}"
 if [[ -n "${CAM_REST_API_VERSION:-}" ]]; then
   _install_versions=("${CAM_REST_API_VERSION}")
+elif [[ "${SKIP_FILE_SERVICE_UPLOAD:-}" == "1" ]]; then
+  _install_versions=(v3)
+  _log "SKIP_FILE_SERVICE_UPLOAD=1: install REST limited to v3 (set CAM_REST_API_VERSION to use another version only)"
 else
   _install_versions=(v3 v2 v1)
 fi
 CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-30}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-600}"
-if [[ -n "${BUNDLE_ZIP:-}" ]]; then
-  ZIP="${BUNDLE_ZIP}"
+
+if [[ "${SKIP_FILE_SERVICE_UPLOAD:-}" == "1" ]]; then
+  _log "SKIP_FILE_SERVICE_UPLOAD=1: not calling file service upload API (bundle must already be on volume, e.g. .../nokia/nsp/cam/artifacts/bundle/)"
+  if [[ -n "${BUNDLE_FILE_NAME:-}" ]]; then
+    NAME="${BUNDLE_FILE_NAME}"
+  elif [[ -n "${BUNDLE_ZIP:-}" && -f "${BUNDLE_ZIP}" ]]; then
+    ZIP="${BUNDLE_ZIP}"
+    NAME="$(basename "${ZIP}")"
+    _log "bundle name from BUNDLE_ZIP: ${NAME}"
+  else
+    ZIP="$(ls -1 "${ROOT}"/dist/*.zip 2>/dev/null | head -1 || true)"
+    if [[ -n "${ZIP}" && -f "${ZIP}" ]]; then
+      NAME="$(basename "${ZIP}")"
+      _log "bundle name from dist zip: ${NAME}"
+    else
+      _log "ERROR: SKIP_FILE_SERVICE_UPLOAD=1 needs BUNDLE_FILE_NAME (e.g. nsp-ne-backup-1.41.0.zip) or a local BUNDLE_ZIP/dist zip for naming"
+      exit 1
+    fi
+  fi
+  _log "expecting file on file service: /nokia/nsp/cam/artifacts/bundle/${NAME}"
 else
-  ZIP="$(ls -1 "${ROOT}"/dist/*.zip 2>/dev/null | head -1 || true)"
+  if [[ -n "${BUNDLE_ZIP:-}" ]]; then
+    ZIP="${BUNDLE_ZIP}"
+  else
+    ZIP="$(ls -1 "${ROOT}"/dist/*.zip 2>/dev/null | head -1 || true)"
+  fi
+  [[ -n "${ZIP}" && -f "${ZIP}" ]] || { _log "ERROR: no bundle zip; set BUNDLE_ZIP or run scripts/repack.sh"; exit 1; }
+  NAME="${BUNDLE_FILE_NAME:-$(basename "${ZIP}")}"
+  _zip_bytes="$(wc -c < "${ZIP}" 2>/dev/null | tr -d ' ' || echo 0)"
+  _log "bundle file: path=${ZIP} bytes=${_zip_bytes} readable=$([[ -r "${ZIP}" ]] && echo yes || echo no)"
+  _dbg "$(ls -la "${ZIP}" 2>/dev/null || true)"
+  _dbg "dist dir: $(ls -la "${ROOT}/dist" 2>/dev/null || echo '<missing>')"
 fi
-[[ -n "${ZIP}" && -f "${ZIP}" ]] || { _log "ERROR: no bundle zip; set BUNDLE_ZIP or run scripts/repack.sh"; exit 1; }
 
-_zip_bytes="$(wc -c < "${ZIP}" 2>/dev/null | tr -d ' ' || echo 0)"
-_log "bundle file: path=${ZIP} bytes=${_zip_bytes} readable=$([[ -r "${ZIP}" ]] && echo yes || echo no)"
-_dbg "$(ls -la "${ZIP}" 2>/dev/null || true)"
-_dbg "dist dir: $(ls -la "${ROOT}/dist" 2>/dev/null || echo '<missing>')"
-
-NAME="${BUNDLE_FILE_NAME:-$(basename "${ZIP}")}"
 # createDirectory=true: file service returns 404 if dirName does not exist (DIR_NOT_EXIST).
 UPLOAD_URL="${NSP_BASE_URL}${FS_UPLOAD_PATH}?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true"
 
 _log "config: NSP_BASE_URL=${NSP_BASE_URL}"
-_log "config: CAM_BASE_PATH=${CAM_BASE_PATH} FS_UPLOAD_PATH=${FS_UPLOAD_PATH} CAM_REST_API_VERSION=${CAM_REST_API_VERSION:-<auto: v3 v2 v1>}"
+_log "config: SKIP_FILE_SERVICE_UPLOAD=${SKIP_FILE_SERVICE_UPLOAD:-0} CAM_BASE_PATH=${CAM_BASE_PATH} FS_UPLOAD_PATH=${FS_UPLOAD_PATH} CAM_REST_API_VERSION=${CAM_REST_API_VERSION:-<auto: ${_install_versions[*]}>}"
 _log "config: CURL_CONNECT_TIMEOUT=${CURL_CONNECT_TIMEOUT}s CURL_MAX_TIME=${CURL_MAX_TIME}s"
 _log "config: NSP_TLS_INSECURE=${NSP_TLS_INSECURE:-<unset>} CURL_CA_BUNDLE=${CURL_CA_BUNDLE:-<unset>}"
 _log "auth: CAM_TOKEN length=${#CAM_TOKEN} characters (value not logged)"
@@ -134,35 +164,39 @@ _dbg "CURL_OPTS count=${#CURL_OPTS[@]} args: ${CURL_OPTS[*]}"
 BODY=$(printf '{"bundles":["%s"]}' "${NAME}")
 _log "install JSON body: ${BODY}"
 
-# MinGW / Schannel curl needs a Windows path for multipart file=@... (curl 26 on /c/...).
-ZIP_UPLOAD="${ZIP}"
-if command -v cygpath >/dev/null 2>&1; then
-  if [[ "${_us}" == MINGW* || "${_us}" == MSYS* || "${OSTYPE:-}" == msys* ]]; then
-    _zipw="$(cygpath -w "${ZIP}" 2>/dev/null || true)"
-    if [[ -n "${_zipw}" ]]; then
-      ZIP_UPLOAD="${_zipw}"
-      _log "multipart upload file path (cygpath -w): ${ZIP_UPLOAD}"
-      _dbg "original ZIP path: ${ZIP}"
+if [[ "${SKIP_FILE_SERVICE_UPLOAD:-}" != "1" ]]; then
+  # MinGW / Schannel curl needs a Windows path for multipart file=@... (curl 26 on /c/...).
+  ZIP_UPLOAD="${ZIP}"
+  if command -v cygpath >/dev/null 2>&1; then
+    if [[ "${_us}" == MINGW* || "${_us}" == MSYS* || "${OSTYPE:-}" == msys* ]]; then
+      _zipw="$(cygpath -w "${ZIP}" 2>/dev/null || true)"
+      if [[ -n "${_zipw}" ]]; then
+        ZIP_UPLOAD="${_zipw}"
+        _log "multipart upload file path (cygpath -w): ${ZIP_UPLOAD}"
+        _dbg "original ZIP path: ${ZIP}"
+      fi
     fi
   fi
+
+  _log "uploading file as NAME=${NAME} (response body snippet up to 400 chars on stdout)"
+  _log "POST ${UPLOAD_URL}"
+  set +o pipefail
+  set +e
+  "${CURL_EXE}" "${CURL_OPTS[@]}" -X POST "${UPLOAD_URL}" \
+    -H "Authorization: Bearer ${CAM_TOKEN}" \
+    -F "file=@${ZIP_UPLOAD};filename=${NAME}" \
+    -F "dirName=/nokia/nsp/cam/artifacts/bundle" \
+    -F "overwrite=true" \
+    | head -c 400 || true
+  _up_stat=("${PIPESTATUS[@]}")
+  set -e
+  set -o pipefail
+  _log "upload curl pipe: curl_exit=${_up_stat[0]:-?} head_exit=${_up_stat[1]:-?}"
+  echo
+else
+  _log "skipping file service POST (SKIP_FILE_SERVICE_UPLOAD=1)"
+  echo
 fi
-
-_log "uploading file as NAME=${NAME} (response body snippet up to 400 chars on stdout)"
-_log "POST ${UPLOAD_URL}"
-set +o pipefail
-set +e
-"${CURL_EXE}" "${CURL_OPTS[@]}" -X POST "${UPLOAD_URL}" \
-  -H "Authorization: Bearer ${CAM_TOKEN}" \
-  -F "file=@${ZIP_UPLOAD};filename=${NAME}" \
-  -F "dirName=/nokia/nsp/cam/artifacts/bundle" \
-  -F "overwrite=true" \
-  | head -c 400 || true
-_up_stat=("${PIPESTATUS[@]}")
-set -e
-set -o pipefail
-_log "upload curl pipe: curl_exit=${_up_stat[0]:-?} head_exit=${_up_stat[1]:-?}"
-
-echo
 
 _log "POST install (expect HTTP 2xx from one of: ${_install_versions[*]}; body on stdout)"
 _in_ec=1
