@@ -7,15 +7,15 @@ name: deploy-nsp-lab
 # Runner labels: this job uses [self-hosted, windows, x64]. Your machine
 # (e.g. C-PF68KS1H) must be registered with those default labels, OR add a
 # unique custom label and change runs-on below to [self-hosted, YourLabel].
+#
+# Windows: use PowerShell to invoke Git Bash explicitly. If WSL is installed,
+# shell: bash can resolve to System32 bash.exe and break temp script paths.
 on:
   workflow_dispatch:
 
 jobs:
   upload-install:
     runs-on: [self-hosted, windows, x64]
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -24,13 +24,31 @@ jobs:
           go-version: "1.22"
 
       - name: Repack bundle
+        shell: pwsh
         run: |
-          chmod +x scripts/repack.sh scripts/upload-and-install.sh 2>/dev/null || true
-          ./scripts/repack.sh
+          $bash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+          if (-not (Test-Path -LiteralPath $bash)) {
+            $bash = Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe"
+          }
+          if (-not (Test-Path -LiteralPath $bash)) {
+            throw "Git for Windows not found (expected bash.exe under Git\bin). Install from https://git-scm.com/download/win"
+          }
+          $ws = ($env:GITHUB_WORKSPACE -replace '\\', '/')
+          & $bash -lc "set -euo pipefail; cd '$ws'; chmod +x scripts/repack.sh scripts/upload-and-install.sh 2>/dev/null || true; ./scripts/repack.sh"
 
       - name: Upload to file service and install
+        shell: pwsh
         env:
           NSP_BASE_URL: ${{ secrets.NSP_BASE_URL }}
           CAM_TOKEN: ${{ secrets.CAM_TOKEN }}
-        run: ./scripts/upload-and-install.sh
+        run: |
+          $bash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+          if (-not (Test-Path -LiteralPath $bash)) {
+            $bash = Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe"
+          }
+          if (-not (Test-Path -LiteralPath $bash)) {
+            throw "Git for Windows not found (expected bash.exe under Git\bin)."
+          }
+          $ws = ($env:GITHUB_WORKSPACE -replace '\\', '/')
+          & $bash -lc "set -euo pipefail; cd '$ws'; ./scripts/upload-and-install.sh"
 # #cursor generated code - end

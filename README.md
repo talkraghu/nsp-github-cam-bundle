@@ -102,7 +102,7 @@ To **pin only one machine**, add a **custom label** (e.g. **`C-PF68KS1H`**) to t
 runs-on: [self-hosted, C-PF68KS1H]
 ```
 
-**Software on the runner (Bash steps):** **Git for Windows** (provides **Git Bash** used when **`shell: bash`**), **Go 1.22+**, and **curl** on `PATH` (Windows 10+ includes **curl.exe**).
+**Software on the runner:** **Git for Windows** (must include **`C:\Program Files\Git\bin\bash.exe`**). The deploy workflow uses **`shell: pwsh`** and invokes that Bash explicitly so **`C:\Windows\System32\bash.exe`** (WSL) is not picked first; WSL breaks Actions temp script paths (error like **`C:ragsNSPpersactions-runner...sh: No such file or directory`**). Also **Go 1.22+** and **curl** on `PATH` (Windows 10+ includes **curl.exe**).
 
 After repository secrets **`NSP_BASE_URL`** and **`CAM_TOKEN`** are set:
 
