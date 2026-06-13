@@ -12,7 +12,7 @@ This repo is scoped to the **`cam-lso-deployer-app`** pilot: bundle name **`nsp-
 | [`source-bundle/`](./source-bundle/) | Input directory: `metadata.json` + `content/` (builder input shape; no `artifact-content` in metadata). |
 | [`scripts/repack.sh`](./scripts/repack.sh) | `go build` + run builder; writes **`dist/*.zip`**. Default **`-unsigned`**. |
 | [`scripts/extract-reference-zip.sh`](./scripts/extract-reference-zip.sh) | Unzip a reference **`nsp-ne-backup-1.41.0.zip`** into `source-bundle/` (then run [`strip-artifact-content.py`](./scripts/strip-artifact-content.py) if metadata still lists digests). |
-| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload to file service + `POST /cam/rest/api/v3/artifactBundle/install` (default) with JSON `{"bundles":["<zip-basename>"]}`. |
+| [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload to file service (`createDirectory=true`) + `POST /cam/rest/api/v2/artifactBundle/install` (default) with JSON `{"bundles":["<zip-basename>"]}`. Set **`CAM_REST_API_VERSION=v3`** when your NSP gateway exposes v3. |
 | [`postman/cam-v3.json`](./postman/cam-v3.json) | OpenAPI export for CAM (v1 or v2 or v3 paths); align **`servers[0].url`** with your lab. |
 | [`reference/`](./reference/README.md) | Optional place for **`nsp-ne-backup-1.41.0.zip`**; see README for compliance notes. |
 | [`.env.example`](./.env.example) | Template for **`NSP_BASE_URL`** / **`CAM_TOKEN`**; copy to **`.env`** (gitignored). |
@@ -54,7 +54,7 @@ Environment overrides:
 
 **Debug logging:** set **`UPLOAD_INSTALL_DEBUG=1`** or **`DEBUG=1`** in **`.env`** (or enable **Actions** re-run with debug logging so **`ACTIONS_STEP_DEBUG=true`**). Logs go to **stderr** with prefix **`[upload-and-install]`**; extra lines use **`[upload-and-install][debug]`**. **`CAM_TOKEN`** is never printed. In GitHub, set repository **Variable** **`UPLOAD_INSTALL_DEBUG`** to **`1`** (optional; wired in **`deploy-nsp-lab.yml`**).
 
-**CAM vs file service:** bundle **upload** uses the **file service** REST API (**`/nsp-file-service-app/rest/api/v1/file/uploadFile`**) because **install only references names**; CAM reads the ZIP from that path (see **Why file service before CAM install?**). **Install** defaults to **v3**: **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/v3/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`** ([ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md)). Override with **`CAM_REST_API_VERSION=v1`** or **`v2`** if needed.
+**CAM vs file service:** bundle **upload** uses the **file service** REST API (**`/nsp-file-service-app/rest/api/v1/file/uploadFile`**) with **`createDirectory=true`** so **`/nokia/nsp/cam/artifacts/bundle`** is created if missing (otherwise the API returns **HTTP 404**). **Install** defaults to **v2**: **`POST {NSP_BASE_URL}{CAM_BASE_PATH}/rest/api/v2/artifactBundle/install`** with JSON **`{"bundles":["<zip-basename>"]}`** (same batch shape as v1/v3; see [ARCH NSPF-264170](../rags-nsp-docs/cam-docs/camapi-v3/ARCH_NSPF-264170_CAM_API_Hardening_v3.md)). Set **`CAM_REST_API_VERSION=v3`** when your cluster exposes v3 on the gateway.
 
 **GitHub Actions:** in the repo on GitHub, add repository secrets **`NSP_BASE_URL`** (`https://100.120.90.89`) and **`CAM_TOKEN`** (same JWT). Manual workflow: [`.github/workflows/deploy-nsp-lab.yml`](./.github/workflows/deploy-nsp-lab.yml).
 
@@ -66,7 +66,9 @@ Optional: **`BUNDLE_ZIP`**, **`FS_UPLOAD_PATH`**, **`CAM_BASE_PATH`**, **`BUNDLE
 
 **Windows / lab TLS:** Git **`mingw64/bin/curl.exe`** (common when **`usr/bin/curl.exe`** is absent) still uses **Schannel**; use a trusted lab CA, **`CURL_CA_BUNDLE`**, or **`NSP_TLS_INSECURE=1`** (non-production). In **GitHub Actions**, **`upload-and-install.sh`** defaults **`NSP_TLS_INSECURE=1`** when unset (see CI section). For **`curl: (26) Failed to open/read local data`** on multipart upload, the script uses **`cygpath -w`** for the **`file=@...`** path when **`cygpath`** is available so MinGW/Schannel curl can open the ZIP.
 
-Upload uses the same pattern as the CAM UI: **`POST .../nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true`** with multipart **`file`**.
+Upload uses the same pattern as the CAM UI: **`POST .../nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true`** with multipart **`file`**.
+
+**Troubleshooting `curl: (22)` / HTTP 404 on upload:** the file service returns **404** when **`dirName`** does not exist and **`createDirectory`** is not true; the script always sends **`createDirectory=true`**. **404 on install** immediately after a failed upload usually means the ZIP never reached the file service. If **upload succeeds** but **install** is still **404**, switch **`CAM_REST_API_VERSION`** between **`v2`** (script default) and **`v3`** to match your NSP REST gateway.
 
 ### Windows: manual curl when you see `curl: (60)` (Schannel)
 
@@ -82,7 +84,7 @@ This environment cannot run your Windows runner or reach your lab (no Windows cu
 TOKEN="paste-jwt-here-no-Bearer-prefix"
 ZIP_WIN="C:/Users/you/Downloads/nsp-ne-backup-1.41.0.zip"
 "/c/Program Files/Git/mingw64/bin/curl.exe" -k -sS -w "\nHTTP %{http_code}\n" \
-  -X POST "https://100.120.90.89/nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true" \
+  -X POST "https://100.120.90.89/nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true" \
   -H "Authorization: Bearer ${TOKEN}" \
   -F "file=@${ZIP_WIN};filename=$(basename "$ZIP_WIN")"
 ```
@@ -93,7 +95,7 @@ ZIP_WIN="C:/Users/you/Downloads/nsp-ne-backup-1.41.0.zip"
 $token = "paste-jwt-here-no-Bearer-prefix"
 $zip = "C:\Users\you\Downloads\nsp-ne-backup-1.41.0.zip"
 & curl.exe -k -sS -w "`nHTTP %{http_code}`n" `
-  -X POST "https://100.120.90.89/nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true" `
+  -X POST "https://100.120.90.89/nsp-file-service-app/rest/api/v1/file/uploadFile?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true" `
   -H "Authorization: Bearer $token" `
   -F "file=@${zip};filename=$(Split-Path $zip -Leaf)"
 ```

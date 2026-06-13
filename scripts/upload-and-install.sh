@@ -80,7 +80,7 @@ _dbg "PATH(first entries)=$(echo "${PATH}" | tr ':' '\n' | head -10)"
 #   BUNDLE_ZIP              path to zip (default: dist/nsp-ne-backup-*.zip first match)
 #   FS_UPLOAD_PATH          default /nsp-file-service-app/rest/api/v1/file/uploadFile (file service is not versioned under CAM v3)
 #   CAM_BASE_PATH           default /cam
-#   CAM_REST_API_VERSION    default v3 (CAM batch install). Use v1 or v2 if your cluster has no v3 surface yet.
+#   CAM_REST_API_VERSION    default v2 (batch install in this repo). Use v3 if your NSP gateway exposes it.
 #   BUNDLE_FILE_NAME        override zip basename on server (default: basename of BUNDLE_ZIP)
 #   CURL_CONNECT_TIMEOUT    seconds (default 30)
 #   CURL_MAX_TIME           seconds for whole transfer (default 600)
@@ -93,7 +93,8 @@ NSP_BASE_URL="${NSP_BASE_URL:?Set NSP_BASE_URL in .env or environment (e.g. http
 CAM_TOKEN="${CAM_TOKEN:?Set CAM_TOKEN in .env or environment (JWT without Bearer prefix)}"
 FS_UPLOAD_PATH="${FS_UPLOAD_PATH:-/nsp-file-service-app/rest/api/v1/file/uploadFile}"
 CAM_BASE_PATH="${CAM_BASE_PATH:-/cam}"
-CAM_REST_API_VERSION="${CAM_REST_API_VERSION:-v3}"
+# v2 matches controllers in cam-server-app (this repo); some NSP trains expose v3 on the gateway only.
+CAM_REST_API_VERSION="${CAM_REST_API_VERSION:-v2}"
 CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-30}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-600}"
 if [[ -n "${BUNDLE_ZIP:-}" ]]; then
@@ -109,7 +110,8 @@ _dbg "$(ls -la "${ZIP}" 2>/dev/null || true)"
 _dbg "dist dir: $(ls -la "${ROOT}/dist" 2>/dev/null || echo '<missing>')"
 
 NAME="${BUNDLE_FILE_NAME:-$(basename "${ZIP}")}"
-UPLOAD_URL="${NSP_BASE_URL}${FS_UPLOAD_PATH}?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true"
+# createDirectory=true: file service returns 404 if dirName does not exist (DIR_NOT_EXIST).
+UPLOAD_URL="${NSP_BASE_URL}${FS_UPLOAD_PATH}?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true"
 
 _log "config: NSP_BASE_URL=${NSP_BASE_URL}"
 _log "config: CAM_BASE_PATH=${CAM_BASE_PATH} FS_UPLOAD_PATH=${FS_UPLOAD_PATH} CAM_REST_API_VERSION=${CAM_REST_API_VERSION}"
