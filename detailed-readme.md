@@ -13,9 +13,11 @@ This repo **repacks** the **`nsp-ne-backup`** artifact bundle (vendored Go [`art
 | [`scripts/repack.sh`](./scripts/repack.sh) | `go build` + run builder; writes **`dist/*.zip`**. Default **`-unsigned`**. |
 | [`scripts/extract-reference-zip.sh`](./scripts/extract-reference-zip.sh) | Unzip a reference **`nsp-ne-backup-1.41.0.zip`** into `source-bundle/` (then run [`strip-artifact-content.py`](./scripts/strip-artifact-content.py) if metadata still lists digests). |
 | [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload (`createDirectory=true`) unless **`SKIP_FILE_SERVICE_UPLOAD=1`**, then **`POST /cam/rest/api/<v>/artifactBundle/install`** (auto **`v3`/`v2`/`v1`** or **`v3`** only when skipping upload). |
+| [`scripts/install-bundle-v3-only.sh`](./scripts/install-bundle-v3-only.sh) | **`POST /cam/rest/api/v3/artifactBundle/install`** only. Requires bundle already present on file-service volume and `BUNDLE_FILE_NAME`. |
 | [`scripts/uninstall-bundle.sh`](./scripts/uninstall-bundle.sh) | **`POST /cam/rest/api/<v>/artifactBundle/uninstall`** (v3) or **`.../unInstall`** (v1/v2) with JSON **`{"bundles":["<zip-basename>"]}`**; auto **`v3`/`v2`/`v1`** unless **`CAM_REST_API_VERSION`** is set. |
 | [`scripts/list-bundles.sh`](./scripts/list-bundles.sh) | **`GET /cam/rest/api/<v>/artifactBundle/`** to list all CAM bundles; auto **`v3`/`v2`/`v1`** unless **`CAM_REST_API_VERSION`** is set. |
 | [`.github/workflows/deploy-nsp-cam-bundle.yml`](./.github/workflows/deploy-nsp-cam-bundle.yml) | Manual deploy: repack + **`upload-and-install.sh`** on self-hosted Windows. |
+| [`.github/workflows/install-nsp-cam-bundle-v3-only.yml`](./.github/workflows/install-nsp-cam-bundle-v3-only.yml) | Manual **`workflow_dispatch`** on self-hosted Windows; calls only CAM v3 install for a preloaded bundle name. |
 | [`.github/workflows/uninstall-nsp-cam-bundle.yml`](./.github/workflows/uninstall-nsp-cam-bundle.yml) | Manual **`workflow_dispatch`** on self-hosted Windows; prompts for **`bundle_file_name`**. |
 | [`.github/workflows/list-nsp-cam-bundles.yml`](./.github/workflows/list-nsp-cam-bundles.yml) | Manual **`workflow_dispatch`** on self-hosted Windows; lists all bundles through CAM REST. |
 | [`postman/cam-v3.json`](./postman/cam-v3.json) | OpenAPI export for CAM (v1 or v2 or v3 paths); align **`servers[0].url`** with your lab. |
@@ -146,6 +148,8 @@ Workflow **[`.github/workflows/build-repack-nsp-ne-backup.yml`](./.github/workfl
 
 **[`deploy-nsp-cam-bundle.yml`](./.github/workflows/deploy-nsp-cam-bundle.yml)** is manual-only; set secrets **`NSP_BASE_URL`** (e.g. `https://100.120.90.89`) and **`CAM_TOKEN`** (JWT without `Bearer `) under **Settings → Secrets and variables → Actions**. TLS: the upload script defaults **`NSP_TLS_INSECURE=1`** on Actions when unset (lab). Override with job env **`NSP_TLS_INSECURE: "0"`** if you need strict verification. Optional repository **variables**: **`CAM_REST_API_VERSION`** pins the CAM install path (if unset with upload, **`upload-and-install.sh`** tries **`v3`**, **`v2`**, **`v1`**). **`SKIP_FILE_SERVICE_UPLOAD=1`** and **`BUNDLE_FILE_NAME`** skip the file-service **REST** upload when the ZIP is already on volume; then install defaults to **v3** only unless **`CAM_REST_API_VERSION`** is set.
 
+**[`install-nsp-cam-bundle-v3-only.yml`](./.github/workflows/install-nsp-cam-bundle-v3-only.yml)** is manual-only on the same **self-hosted Windows** runner model. It runs **`scripts/install-bundle-v3-only.sh`** and calls only **`POST .../rest/api/v3/artifactBundle/install`** with **`{"bundles":["<name>.zip"]}`**. Use this when file-service upload APIs are unavailable and the ZIP is already present under **`/nokia/nsp/cam/artifacts/bundle/`**.
+
 **[`uninstall-nsp-cam-bundle.yml`](./.github/workflows/uninstall-nsp-cam-bundle.yml)** is manual-only on the same **self-hosted Windows** runner model. It runs **`scripts/uninstall-bundle.sh`** with **`bundle_file_name`** from the workflow form (default **`nsp-ne-backup-1.41.0.zip`**). Same **`NSP_BASE_URL`** / **`CAM_TOKEN`** secrets. Optional **`CAM_REST_API_VERSION`** variable pins the CAM API version; otherwise the script tries **`v3`**, **`v2`**, **`v1`**. v3 uses **`POST .../artifactBundle/uninstall`**; v1/v2 use **`POST .../artifactBundle/unInstall`** (camelCase), same JSON body **`{"bundles":["<name>.zip"]}`** as batch install.
 
 **[`list-nsp-cam-bundles.yml`](./.github/workflows/list-nsp-cam-bundles.yml)** is manual-only on the same **self-hosted Windows** runner model. It runs **`scripts/list-bundles.sh`** to call **`GET .../artifactBundle/`** and print the returned JSON. Same **`NSP_BASE_URL`** / **`CAM_TOKEN`** secrets. Optional **`CAM_REST_API_VERSION`** variable pins the CAM API version; otherwise the script tries **`v3`**, **`v2`**, **`v1`**.
@@ -226,6 +230,23 @@ After repository secrets **`NSP_BASE_URL`** and **`CAM_TOKEN`** are set:
 
 ```bash
 gh workflow run deploy-nsp-cam-bundle.yml --ref master
+```
+
+### Trigger v3 install-only on lab (preloaded bundle)
+
+Use this when the bundle ZIP is already available on file service at:
+`/nokia/nsp/cam/artifacts/bundle/<bundle_file_name>`.
+
+```bash
+chmod +x scripts/install-bundle-v3-only.sh
+export BUNDLE_FILE_NAME=nsp-ne-backup-1.41.0.zip
+./scripts/install-bundle-v3-only.sh
+```
+
+From **`gh`**:
+
+```bash
+gh workflow run install-nsp-cam-bundle-v3-only.yml --ref master -f bundle_file_name=nsp-ne-backup-1.41.0.zip
 ```
 
 ### Trigger uninstall on lab (CAM REST only)

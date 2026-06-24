@@ -1,0 +1,40 @@
+# #cursor generated code - start
+name: install-nsp-cam-bundle-v3-only
+
+# Manual install-only flow for preloaded bundles.
+# Calls only CAM v3 install API and does not perform file-service upload.
+#
+# Set repository secrets NSP_BASE_URL and CAM_TOKEN.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_file_name:
+        description: "Bundle ZIP name already present on file service (e.g. nsp-ne-backup-1.41.0.zip)"
+        required: true
+        default: "nsp-ne-backup-1.41.0.zip"
+        type: string
+
+jobs:
+  install-bundle-v3:
+    runs-on: [self-hosted, windows, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install preloaded bundle via CAM REST v3
+        shell: pwsh
+        env:
+          NSP_BASE_URL: ${{ secrets.NSP_BASE_URL }}
+          CAM_TOKEN: ${{ secrets.CAM_TOKEN }}
+          BUNDLE_FILE_NAME: ${{ inputs.bundle_file_name }}
+          UPLOAD_INSTALL_DEBUG: ${{ vars.UPLOAD_INSTALL_DEBUG }}
+        run: |
+          $bash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+          if (-not (Test-Path -LiteralPath $bash)) {
+            $bash = Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe"
+          }
+          if (-not (Test-Path -LiteralPath $bash)) {
+            throw "Git for Windows not found (expected bash.exe under Git\bin)."
+          }
+          $ws = ($env:GITHUB_WORKSPACE -replace '\\', '/')
+          & $bash -lc "set -euo pipefail; cd '$ws'; chmod +x scripts/install-bundle-v3-only.sh 2>/dev/null || true; ./scripts/install-bundle-v3-only.sh"
+# #cursor generated code - end
