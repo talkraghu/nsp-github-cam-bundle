@@ -78,10 +78,11 @@ _dbg "PATH(first entries)=$(echo "${PATH}" | tr ':' '\n' | head -10)"
 #   CAM_TOKEN          Bearer token value (without "Bearer " prefix)
 #
 # Optional:
-#   SKIP_FILE_SERVICE_UPLOAD  set to 1 to skip REST upload (bundle must already exist under
-#                             /nokia/nsp/cam/artifacts/bundle/ on file-service storage). Then set
-#                             BUNDLE_FILE_NAME or keep a local zip for naming only. Install defaults to v3 only
-#                             unless CAM_REST_API_VERSION is set.
+#   SKIP_FILE_SERVICE_UPLOAD  defaults to 1 (skip REST upload) because many lab setups manually
+#                             preload the ZIP under /nokia/nsp/cam/artifacts/bundle/ on file-service storage.
+#                             Set SKIP_FILE_SERVICE_UPLOAD=0 to enable REST upload from this script.
+#                             When skipping upload, set BUNDLE_FILE_NAME or keep a local zip for naming only.
+#                             Install defaults to v3 only unless CAM_REST_API_VERSION is set.
 #   BUNDLE_ZIP              path to zip (default: dist/nsp-ne-backup-*.zip first match); not required when
 #                             SKIP_FILE_SERVICE_UPLOAD=1 if BUNDLE_FILE_NAME is set
 #   FS_UPLOAD_PATH          default /nsp-file-service-app/rest/api/v1/file/uploadFile (ignored when skip upload)
@@ -99,9 +100,10 @@ NSP_BASE_URL="${NSP_BASE_URL:?Set NSP_BASE_URL in .env or environment (e.g. http
 CAM_TOKEN="${CAM_TOKEN:?Set CAM_TOKEN in .env or environment (JWT without Bearer prefix)}"
 FS_UPLOAD_PATH="${FS_UPLOAD_PATH:-/nsp-file-service-app/rest/api/v1/file/uploadFile}"
 CAM_BASE_PATH="${CAM_BASE_PATH:-/cam}"
+SKIP_FILE_SERVICE_UPLOAD="${SKIP_FILE_SERVICE_UPLOAD:-1}"
 if [[ -n "${CAM_REST_API_VERSION:-}" ]]; then
   _install_versions=("${CAM_REST_API_VERSION}")
-elif [[ "${SKIP_FILE_SERVICE_UPLOAD:-}" == "1" ]]; then
+elif [[ "${SKIP_FILE_SERVICE_UPLOAD}" == "1" ]]; then
   _install_versions=(v3)
   _log "SKIP_FILE_SERVICE_UPLOAD=1: install REST limited to v3 (set CAM_REST_API_VERSION to use another version only)"
 else
@@ -110,7 +112,7 @@ fi
 CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-30}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-600}"
 
-if [[ "${SKIP_FILE_SERVICE_UPLOAD:-}" == "1" ]]; then
+if [[ "${SKIP_FILE_SERVICE_UPLOAD}" == "1" ]]; then
   _log "SKIP_FILE_SERVICE_UPLOAD=1: not calling file service upload API (bundle must already be on volume, e.g. .../nokia/nsp/cam/artifacts/bundle/)"
   if [[ -n "${BUNDLE_FILE_NAME:-}" ]]; then
     NAME="${BUNDLE_FILE_NAME}"
@@ -147,7 +149,7 @@ fi
 UPLOAD_URL="${NSP_BASE_URL}${FS_UPLOAD_PATH}?dirName=/nokia/nsp/cam/artifacts/bundle&overwrite=true&createDirectory=true"
 
 _log "config: NSP_BASE_URL=${NSP_BASE_URL}"
-_log "config: SKIP_FILE_SERVICE_UPLOAD=${SKIP_FILE_SERVICE_UPLOAD:-0} CAM_BASE_PATH=${CAM_BASE_PATH} FS_UPLOAD_PATH=${FS_UPLOAD_PATH} CAM_REST_API_VERSION=${CAM_REST_API_VERSION:-<auto: ${_install_versions[*]}>}"
+_log "config: SKIP_FILE_SERVICE_UPLOAD=${SKIP_FILE_SERVICE_UPLOAD} CAM_BASE_PATH=${CAM_BASE_PATH} FS_UPLOAD_PATH=${FS_UPLOAD_PATH} CAM_REST_API_VERSION=${CAM_REST_API_VERSION:-<auto: ${_install_versions[*]}>}"
 _log "config: CURL_CONNECT_TIMEOUT=${CURL_CONNECT_TIMEOUT}s CURL_MAX_TIME=${CURL_MAX_TIME}s"
 _log "config: NSP_TLS_INSECURE=${NSP_TLS_INSECURE:-<unset>} CURL_CA_BUNDLE=${CURL_CA_BUNDLE:-<unset>}"
 _log "auth: CAM_TOKEN length=${#CAM_TOKEN} characters (value not logged)"
@@ -164,7 +166,7 @@ _dbg "CURL_OPTS count=${#CURL_OPTS[@]} args: ${CURL_OPTS[*]}"
 BODY=$(printf '{"bundles":["%s"]}' "${NAME}")
 _log "install JSON body: ${BODY}"
 
-if [[ "${SKIP_FILE_SERVICE_UPLOAD:-}" != "1" ]]; then
+if [[ "${SKIP_FILE_SERVICE_UPLOAD}" != "1" ]]; then
   # MinGW / Schannel curl needs a Windows path for multipart file=@... (curl 26 on /c/...).
   ZIP_UPLOAD="${ZIP}"
   if command -v cygpath >/dev/null 2>&1; then

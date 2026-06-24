@@ -14,8 +14,10 @@ This repo **repacks** the **`nsp-ne-backup`** artifact bundle (vendored Go [`art
 | [`scripts/extract-reference-zip.sh`](./scripts/extract-reference-zip.sh) | Unzip a reference **`nsp-ne-backup-1.41.0.zip`** into `source-bundle/` (then run [`strip-artifact-content.py`](./scripts/strip-artifact-content.py) if metadata still lists digests). |
 | [`scripts/upload-and-install.sh`](./scripts/upload-and-install.sh) | `curl` upload (`createDirectory=true`) unless **`SKIP_FILE_SERVICE_UPLOAD=1`**, then **`POST /cam/rest/api/<v>/artifactBundle/install`** (auto **`v3`/`v2`/`v1`** or **`v3`** only when skipping upload). |
 | [`scripts/uninstall-bundle.sh`](./scripts/uninstall-bundle.sh) | **`POST /cam/rest/api/<v>/artifactBundle/uninstall`** (v3) or **`.../unInstall`** (v1/v2) with JSON **`{"bundles":["<zip-basename>"]}`**; auto **`v3`/`v2`/`v1`** unless **`CAM_REST_API_VERSION`** is set. |
+| [`scripts/list-bundles.sh`](./scripts/list-bundles.sh) | **`GET /cam/rest/api/<v>/artifactBundle/`** to list all CAM bundles; auto **`v3`/`v2`/`v1`** unless **`CAM_REST_API_VERSION`** is set. |
 | [`.github/workflows/deploy-nsp-cam-bundle.yml`](./.github/workflows/deploy-nsp-cam-bundle.yml) | Manual deploy: repack + **`upload-and-install.sh`** on self-hosted Windows. |
 | [`.github/workflows/uninstall-nsp-cam-bundle.yml`](./.github/workflows/uninstall-nsp-cam-bundle.yml) | Manual **`workflow_dispatch`** on self-hosted Windows; prompts for **`bundle_file_name`**. |
+| [`.github/workflows/list-nsp-cam-bundles.yml`](./.github/workflows/list-nsp-cam-bundles.yml) | Manual **`workflow_dispatch`** on self-hosted Windows; lists all bundles through CAM REST. |
 | [`postman/cam-v3.json`](./postman/cam-v3.json) | OpenAPI export for CAM (v1 or v2 or v3 paths); align **`servers[0].url`** with your lab. |
 | [`reference/`](./reference/README.md) | Optional place for **`nsp-ne-backup-1.41.0.zip`**; see README for compliance notes. |
 | [`.env.example`](./.env.example) | Template for **`NSP_BASE_URL`** / **`CAM_TOKEN`**; copy to **`.env`** (gitignored). |
@@ -146,6 +148,8 @@ Workflow **[`.github/workflows/build-repack-nsp-ne-backup.yml`](./.github/workfl
 
 **[`uninstall-nsp-cam-bundle.yml`](./.github/workflows/uninstall-nsp-cam-bundle.yml)** is manual-only on the same **self-hosted Windows** runner model. It runs **`scripts/uninstall-bundle.sh`** with **`bundle_file_name`** from the workflow form (default **`nsp-ne-backup-1.41.0.zip`**). Same **`NSP_BASE_URL`** / **`CAM_TOKEN`** secrets. Optional **`CAM_REST_API_VERSION`** variable pins the CAM API version; otherwise the script tries **`v3`**, **`v2`**, **`v1`**. v3 uses **`POST .../artifactBundle/uninstall`**; v1/v2 use **`POST .../artifactBundle/unInstall`** (camelCase), same JSON body **`{"bundles":["<name>.zip"]}`** as batch install.
 
+**[`list-nsp-cam-bundles.yml`](./.github/workflows/list-nsp-cam-bundles.yml)** is manual-only on the same **self-hosted Windows** runner model. It runs **`scripts/list-bundles.sh`** to call **`GET .../artifactBundle/`** and print the returned JSON. Same **`NSP_BASE_URL`** / **`CAM_TOKEN`** secrets. Optional **`CAM_REST_API_VERSION`** variable pins the CAM API version; otherwise the script tries **`v3`**, **`v2`**, **`v1`**.
+
 ### Build locally (same as CI)
 
 ```bash
@@ -182,6 +186,42 @@ runs-on: [self-hosted, C-PF68KS1H]
 
 **Software on the runner:** **Git for Windows** (must include **`C:\Program Files\Git\bin\bash.exe`**). The deploy workflow uses **`shell: pwsh`** and invokes that Bash explicitly so **`C:\Windows\System32\bash.exe`** (WSL) is not picked first; WSL breaks Actions temp script paths (error like **`C:ragsNSPpersactions-runner...sh: No such file or directory`**). Also **Go 1.22+** and **curl** on `PATH` (Windows 10+ includes **curl.exe**).
 
+### Run the self-hosted runner locally (laptop)
+
+If your runner is already configured and you are in the runner directory, for example:
+
+```powershell
+PS C:\rags\NSP\pers\actions-runner>
+```
+
+start the runner with:
+
+```powershell
+.\run.cmd
+```
+
+Expected startup output is similar to:
+
+```text
+Connected to GitHub
+Current runner version: 2.335.1
+2026-06-13 xx:xx:xxZ: Listening for Jobs
+```
+
+Keep that PowerShell window open while workflows are running. If the process exits, GitHub cannot dispatch jobs to this machine.
+
+After startup, verify runner status in GitHub:
+
+- [Repository runners page](https://github.com/talkraghu/nsp-github-cam-bundle/settings/actions/runners)
+- expected runner entry: `C-PF68KS1H`
+- expected state: `Online`
+
+If startup fails, capture and share the full output from:
+
+```powershell
+.\run.cmd
+```
+
 After repository secrets **`NSP_BASE_URL`** and **`CAM_TOKEN`** are set:
 
 ```bash
@@ -200,6 +240,19 @@ From **`gh`** (override the default bundle name if needed):
 
 ```bash
 gh workflow run uninstall-nsp-cam-bundle.yml --ref master -f bundle_file_name=nsp-ne-backup-1.41.0.zip
+```
+
+### Trigger list bundles on lab (CAM REST only)
+
+```bash
+chmod +x scripts/list-bundles.sh
+./scripts/list-bundles.sh
+```
+
+From **`gh`**:
+
+```bash
+gh workflow run list-nsp-cam-bundles.yml --ref master
 ```
 
 **Security:** Do not embed GitHub PATs or JWTs in `git remote` URLs. Use **`gh auth login`**, SSH remotes, or a credential helper, and rotate any token that was stored in plain text.

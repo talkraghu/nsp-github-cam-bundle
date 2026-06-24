@@ -67,12 +67,14 @@ export BUNDLE_FILE_NAME=nsp-ne-backup-1.41.0.zip
 | [`build-repack-nsp-ne-backup.yml`](./.github/workflows/build-repack-nsp-ne-backup.yml) | Repack on push/PR; upload **`dist/*.zip`** artifact. |
 | [`deploy-nsp-cam-bundle.yml`](./.github/workflows/deploy-nsp-cam-bundle.yml) | Manual: repack + **`upload-and-install.sh`** on **self-hosted Windows**. |
 | [`uninstall-nsp-cam-bundle.yml`](./.github/workflows/uninstall-nsp-cam-bundle.yml) | Manual: **`uninstall-bundle.sh`** with workflow input **`bundle_file_name`**. |
+| [`list-nsp-cam-bundles.yml`](./.github/workflows/list-nsp-cam-bundles.yml) | Manual: **`list-bundles.sh`** to list all CAM bundles via REST. |
 
 Secrets: **`NSP_BASE_URL`**, **`CAM_TOKEN`**. Optional repo **variables** and TLS behavior are documented in [detailed-readme.md](./detailed-readme.md).
 
 ```bash
 gh workflow run deploy-nsp-cam-bundle.yml --ref main
 gh workflow run uninstall-nsp-cam-bundle.yml --ref main -f bundle_file_name=nsp-ne-backup-1.41.0.zip
+gh workflow run list-nsp-cam-bundles.yml --ref main
 ```
 
 ## Related documentation
