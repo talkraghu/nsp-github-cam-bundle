@@ -96,6 +96,13 @@ CURL_MAX_TIME="${CURL_MAX_TIME:-600}"
 BODY=$(printf '{"bundles":["%s"]}' "${BUNDLE_FILE_NAME}")
 
 _log "config: NSP_BASE_URL=${NSP_BASE_URL}"
+_nsp_no_scheme="${NSP_BASE_URL#*://}"
+_nsp_host="${_nsp_no_scheme%%/*}"
+_log "config: NSP_HOST=${_nsp_host}"
+if command -v sha256sum >/dev/null 2>&1; then
+  _base_hash="$(printf '%s' "${NSP_BASE_URL}" | sha256sum | awk '{print $1}')"
+  _log "config: NSP_BASE_URL_SHA256=${_base_hash}"
+fi
 _log "config: CAM_BASE_PATH=${CAM_BASE_PATH} BUNDLE_FILE_NAME=${BUNDLE_FILE_NAME} CAM_REST_API_VERSION=${CAM_REST_API_VERSION:-<auto: ${_uninstall_versions[*]}>}"
 _log "config: CURL_CONNECT_TIMEOUT=${CURL_CONNECT_TIMEOUT}s CURL_MAX_TIME=${CURL_MAX_TIME}s"
 _log "config: NSP_TLS_INSECURE=${NSP_TLS_INSECURE:-<unset>} CURL_CA_BUNDLE=${CURL_CA_BUNDLE:-<unset>}"
@@ -112,6 +119,7 @@ fi
 _dbg "CURL_OPTS count=${#CURL_OPTS[@]} args: ${CURL_OPTS[*]}"
 
 _in_ec=1
+_ok_version=""
 for _ver in "${_uninstall_versions[@]}"; do
   if [[ "${_ver}" == "v3" ]]; then
     _path_suffix="uninstall"
@@ -120,20 +128,60 @@ for _ver in "${_uninstall_versions[@]}"; do
   fi
   UNINSTALL_URL="${NSP_BASE_URL}${CAM_BASE_PATH}/rest/api/${_ver}/artifactBundle/${_path_suffix}"
   _log "POST uninstall try REST ${_ver}: ${UNINSTALL_URL}"
+  _resp_file="$(mktemp)"
   set +e
-  "${CURL_EXE}" "${CURL_OPTS[@]}" -X POST "${UNINSTALL_URL}" \
+  _http_code=$("${CURL_EXE}" "${CURL_OPTS[@]}" -X POST "${UNINSTALL_URL}" \
+    -o "${_resp_file}" \
+    -w "%{http_code}" \
     -H "Authorization: Bearer ${CAM_TOKEN}" \
     -H "Accept: application/json, application/problem+json" \
     -H "Content-Type: application/json" \
-    -d "${BODY}"
-  _in_ec=$?
+    -d "${BODY}")
+  _curl_ec=$?
   set -e
-  _log "uninstall ${_ver} curl exit=${_in_ec}"
-  if [[ "${_in_ec}" -eq 0 ]]; then
+  _response_body="$(tr -d '\r' < "${_resp_file}" 2>/dev/null || true)"
+  rm -f "${_resp_file}"
+  _log "uninstall ${_ver} curl_exit=${_curl_ec} http_status=${_http_code}"
+  if [[ -n "${_response_body}" ]]; then
+    _log "uninstall ${_ver} response: $(printf '%s' "${_response_body}" | head -c 600)"
+  else
+    _log "uninstall ${_ver} response: <empty>"
+  fi
+
+  if [[ "${_curl_ec}" -eq 0 && "${_http_code}" =~ ^2[0-9][0-9]$ ]]; then
+    _in_ec=0
+    _ok_version="${_ver}"
     break
   fi
 done
 [[ "${_in_ec}" -eq 0 ]]
+
+_list_url="${NSP_BASE_URL}${CAM_BASE_PATH}/rest/api/${_ok_version}/artifactBundle/"
+_log "GET post-check bundles from REST ${_ok_version}: ${_list_url}"
+_post_resp_file="$(mktemp)"
+set +e
+_post_http_code=$("${CURL_EXE}" "${CURL_OPTS[@]}" -X GET "${_list_url}" \
+  -o "${_post_resp_file}" \
+  -w "%{http_code}" \
+  -H "Authorization: Bearer ${CAM_TOKEN}" \
+  -H "Accept: application/json, application/problem+json")
+_post_ec=$?
+set -e
+_post_body="$(tr -d '\r' < "${_post_resp_file}" 2>/dev/null || true)"
+rm -f "${_post_resp_file}"
+_log "post-check list curl_exit=${_post_ec} http_status=${_post_http_code}"
+if [[ "${_post_ec}" -eq 0 && "${_post_http_code}" =~ ^2[0-9][0-9]$ ]]; then
+  if [[ "${_post_body}" == *"${BUNDLE_FILE_NAME}"* ]]; then
+    _log "post-check: bundle name '${BUNDLE_FILE_NAME}' is still present in list response (inspect status fields in response body)."
+  else
+    _log "post-check: bundle name '${BUNDLE_FILE_NAME}' not found in list response."
+  fi
+  _dbg "post-check response: ${_post_body}"
+else
+  _log "post-check: unable to fetch bundle list for verification."
+  _dbg "post-check response: ${_post_body}"
+fi
+
 echo
 _log "finished OK"
 # #cursor generated code - end
